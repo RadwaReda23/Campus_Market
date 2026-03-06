@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 
 function SignUp() {
   const [error, setError] = useState("");
-  const history = useNavigate();
+  const history = useNavigate(); // للتنقل بين الصفحات
 
   const handleSignUp = async (e) => {
     e.preventDefault();
@@ -54,6 +54,17 @@ function SignUp() {
           {error && <p style={styles.error}>{error}</p>}
           <button type="submit" style={styles.button}>Sign Up</button>
         </form>
+
+        {/* زر يوديك لصفحة تسجيل الدخول */}
+        <p style={{ marginTop: "15px", textAlign: "center" }}>
+          Already have an account?{" "}
+          <button 
+            style={styles.linkButton} 
+            onClick={() => history("/login")}
+          >
+            Login
+          </button>
+        </p>
       </div>
     </div>
   );
@@ -95,6 +106,16 @@ const styles = {
     color: "#fff",
     fontSize: "16px",
     cursor: "pointer",
+  },
+  linkButton: {
+    background: "none",
+    border: "none",
+    color: "#667eea",
+    cursor: "pointer",
+    textDecoration: "underline",
+    fontSize: "14px",
+    padding: 0,
+    margin: 0,
   },
   error: {
     color: "red",
