@@ -2,23 +2,23 @@ import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
 import { auth } from "./firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { useRouter } from "expo-router";
 
-export default function Login({ navigation }) {
+export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+  const router = useRouter();
 
   const handleLogin = async () => {
     setMessage("");
-
     if (!email || !password) {
       setMessage("Please enter email and password");
       return;
     }
-
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      setMessage("Login successful!");
+      router.replace("/(tabs)");
     } catch (err) {
       setMessage(err.message);
     }
@@ -29,21 +29,29 @@ export default function Login({ navigation }) {
       <View style={styles.card}>
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>Login to your account</Text>
-
-        <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" />
-        <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={styles.input} secureTextEntry />
-
+        <TextInput
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          style={styles.input}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <TextInput
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          style={styles.input}
+          secureTextEntry
+        />
         {message ? <Text style={styles.message}>{message}</Text> : null}
-
         <TouchableOpacity style={styles.button} onPress={handleLogin}>
           <Text style={styles.buttonText}>Login</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => navigation.navigate("ForgetPassword")} style={{ marginTop: 15 }}>
+        <TouchableOpacity onPress={() => router.push("/ForgetPassword")} style={{ marginTop: 15 }}>
           <Text style={styles.linkText}>Forgot Password?</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => navigation.navigate("SignUp")} style={{ marginTop: 10 }}>
+        <TouchableOpacity onPress={() => router.push("/Register")} style={{ marginTop: 10 }}>
           <Text style={styles.linkText}>Don't have an account? Sign Up</Text>
         </TouchableOpacity>
       </View>

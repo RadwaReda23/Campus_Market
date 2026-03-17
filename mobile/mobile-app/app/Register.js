@@ -1,35 +1,31 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
 import { auth } from "./firebase";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { useRouter } from "expo-router";
 
-export default function SignUp({ navigation }) {
+export default function SignUp() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const router = useRouter();
 
   const handleSignUp = async () => {
     setError("");
-
     if (!username || !email || !password || !confirmPassword) {
       setError("All fields are required");
       return;
     }
-
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
     }
-
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-
       await updateProfile(userCredential.user, { displayName: username });
-
-      Alert.alert("Success", "SignUp successful!");
-      navigation.navigate("Login");
+      router.replace("/(tabs)");
     } catch (err) {
       setError(err.message);
     }
@@ -39,19 +35,15 @@ export default function SignUp({ navigation }) {
     <View style={styles.container}>
       <View style={styles.card}>
         <Text style={styles.title}>Sign Up</Text>
-
         <TextInput placeholder="Username" value={username} onChangeText={setUsername} style={styles.input} />
         <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" />
         <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={styles.input} secureTextEntry />
         <TextInput placeholder="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} style={styles.input} secureTextEntry />
-
         {error ? <Text style={styles.error}>{error}</Text> : null}
-
         <TouchableOpacity style={styles.button} onPress={handleSignUp}>
           <Text style={styles.buttonText}>Sign Up</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => navigation.navigate("Login")} style={{ marginTop: 15 }}>
+        <TouchableOpacity onPress={() => router.push("/login")} style={{ marginTop: 15 }}>
           <Text style={styles.linkText}>Already have an account? Login</Text>
         </TouchableOpacity>
       </View>
