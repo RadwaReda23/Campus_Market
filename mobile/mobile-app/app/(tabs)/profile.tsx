@@ -16,7 +16,6 @@ export default function ProfileScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
 
-  // 🔥 الحل هنا
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -46,7 +45,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
       
-      {/* Profile Header */}
+      {/* Header */}
       <View style={styles.profileHeader}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
@@ -59,7 +58,7 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* My Products */}
+      {/* Products */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🛒 منتجاتي</Text>
         {mockProducts.map(p => (
@@ -78,7 +77,6 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>⚙️ إعدادات الحساب</Text>
 
-        {/* الاسم */}
         <View style={styles.uiBox}>
           <Text style={styles.label}>الاسم</Text>
           <TextInput
@@ -89,7 +87,6 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* الإيميل */}
         <View style={styles.uiBox}>
           <Text style={styles.label}>الإيميل</Text>
           <TextInput
@@ -100,7 +97,6 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* زر Update */}
         <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate}>
           <Text style={styles.updateText}>Update Profile</Text>
         </TouchableOpacity>
