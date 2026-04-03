@@ -1,23 +1,21 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React from 'react';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 
+const mockProducts = [
+  { id: 1, title: 'كتاب حساب التفاضل والتكامل', price: 45, image: '📚', views: 34 },
+  { id: 2, title: 'ميكروسكوب محمول', price: 320, image: '🔬', views: 87 },
+  { id: 3, title: 'كول روب معمل', price: 30, image: '🥼', views: 19 },
+];
+
 export default function ProfileScreen() {
   const router = useRouter();
-
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
 
   const handleLogout = async () => {
     await signOut(auth);
     router.replace('/Register');
-  };
-
-  const handleUpdate = () => {
-    console.log('Updating profile:', { name, email });
-    // هنا ممكن تضيف منطق تحديث البيانات فعليًا
   };
 
   return (
@@ -25,44 +23,46 @@ export default function ProfileScreen() {
       {/* Profile Header */}
       <View style={styles.profileHeader}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>م</Text>
+          <Text style={styles.avatarText}>M</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.profileName}>{name || "my name"}</Text>
-          <Text style={styles.profileRole}>{email || "my email"}</Text>
+          <Text style={styles.profileName}>my name</Text>
+          <Text style={styles.profileRole}></Text>
         </View>
       </View>
 
-      {/* Settings Section */}
+      {/* My Products */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🛒 منتجاتي</Text>
+        {mockProducts.map(p => (
+          <View key={p.id} style={styles.productRow}>
+            <Text style={styles.productEmoji}>{p.image}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.productTitle}>{p.title}</Text>
+              <Text style={styles.productMeta}>👁 {p.views} مشاهدة</Text>
+            </View>
+            <Text style={styles.productPrice}>{p.price} ج</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Settings */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>⚙️ إعدادات الحساب</Text>
 
-        {/* Side by side inputs */}
-        <View style={styles.rowInputs}>
-          <View style={styles.uiBox}>
-            <Text style={styles.label}>My Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="أدخل اسمك"
-              value={name}
-              onChangeText={setName}
-            />
-          </View>
-
-          <View style={styles.uiBox}>
-            <Text style={styles.label}>My Email</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="أدخل الإيميل"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-            />
-          </View>
+        {/* الاسم والايميل فاضي */}
+        <View style={styles.uiBox}>
+          <Text style={styles.label}>الاسم</Text>
+          <TextInput style={styles.input} placeholder="أدخل اسمك" value="" />
         </View>
 
-        {/* Update Button */}
-        <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate}>
+        <View style={styles.uiBox}>
+          <Text style={styles.label}>الإيميل</Text>
+          <TextInput style={styles.input} placeholder="أدخل الإيميل" value="" keyboardType="email-address" />
+        </View>
+
+        {/* زر Update */}
+        <TouchableOpacity style={styles.updateBtn}>
           <Text style={styles.updateText}>Update Profile</Text>
         </TouchableOpacity>
       </View>
@@ -118,48 +118,25 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ddd3c0'
   },
 
-  rowInputs: {
+  productRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    padding: 12
-  },
-
-  uiBox: {
-    flex: 1,
-    marginHorizontal: 5
-  },
-
-  label: {
-    fontSize: 12,
-    color: '#8a7d6b',
-    marginBottom: 5
-  },
-
-  input: {
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    backgroundColor: '#fafafa'
-  },
-
-  updateBtn: {
-    backgroundColor: '#1a3a2a',
     padding: 12,
-    margin: 12,
-    borderRadius: 10,
-    alignItems: 'center'
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0ebe0'
   },
 
+  productEmoji: { fontSize: 24 },
+  productTitle: { fontSize: 13, fontWeight: '700' },
+  productMeta: { fontSize: 11, color: '#8a7d6b' },
+  productPrice: { fontWeight: 'bold', color: '#c8a84b' },
+
+  uiBox: { padding: 12 },
+  label: { fontSize: 12, color: '#8a7d6b', marginBottom: 5 },
+  input: { padding: 10, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, backgroundColor: '#fafafa' },
+
+  updateBtn: { backgroundColor: '#1a3a2a', padding: 12, margin: 12, borderRadius: 10, alignItems: 'center' },
   updateText: { color: 'white', fontWeight: 'bold' },
 
-  logoutBtn: {
-    margin: 16,
-    backgroundColor: '#c0392b',
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center'
-  },
-
+  logoutBtn: { margin: 16, backgroundColor: '#c0392b', padding: 14, borderRadius: 12, alignItems: 'center' },
   logoutText: { color: 'white', fontWeight: 'bold' }
 });
