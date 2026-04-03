@@ -1,26 +1,24 @@
+// src/pages/Login.js
 import { useState } from "react";
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
-import { firebaseApp } from "../firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "../firebase";
+import { useNavigate } from "react-router-dom";
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-
-  const auth = getAuth(firebaseApp);
+  const history = useNavigate(); // للتنقل بين الصفحات
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
-
-    if (!email || !password) {
-      setError("Please enter email and password");
-      return;
-    }
+    if (!email || !password) return setError("Please enter email and password");
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
       alert("Login successful!");
+      history("/home"); // بعد تسجيل الدخول
     } catch (err) {
       setError(err.message);
     }
@@ -29,29 +27,35 @@ function Login() {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <h2 style={styles.title}>Welcome Back</h2>
-        <p style={styles.subtitle}>Login to your account</p>
-
+        <h2>Login</h2>
         <form onSubmit={handleLogin} style={styles.form}>
           <input
             type="email"
-            placeholder="Enter Email"
+            placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             style={styles.input}
           />
           <input
             type="password"
-            placeholder="Enter Password"
+            placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={styles.input}
           />
           {error && <p style={styles.error}>{error}</p>}
-          <button type="submit" style={styles.button}>
-            Login
-          </button>
+          <button type="submit" style={styles.button}>Login</button>
         </form>
+
+        {/* زر نسيان الباسورد */}
+        <p style={{ textAlign: "center", marginTop: "15px" }}>
+          <button 
+            style={styles.linkButton} 
+            onClick={() => history("/reset")} // رابط صفحة ForgetPassword/ResetPassword
+          >
+            Forgot Password?
+          </button>
+        </p>
       </div>
     </div>
   );
@@ -71,17 +75,8 @@ const styles = {
     padding: "40px",
     borderRadius: "15px",
     boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
-    width: "350px",
+    width: "400px",
     textAlign: "center",
-  },
-  title: {
-    margin: "0 0 10px 0",
-    color: "#333",
-  },
-  subtitle: {
-    margin: "0 0 30px 0",
-    color: "#666",
-    fontSize: "14px",
   },
   form: {
     display: "flex",
@@ -92,7 +87,6 @@ const styles = {
     margin: "10px 0",
     borderRadius: "8px",
     border: "1px solid #ccc",
-    fontSize: "14px",
   },
   button: {
     padding: "12px",
@@ -103,11 +97,20 @@ const styles = {
     color: "#fff",
     fontSize: "16px",
     cursor: "pointer",
-    transition: "0.3s",
+  },
+  linkButton: {
+    background: "none",
+    border: "none",
+    color: "#667eea",
+    cursor: "pointer",
+    textDecoration: "underline",
+    fontSize: "14px",
+    padding: 0,
+    margin: 0,
   },
   error: {
     color: "red",
-    fontSize: "13px",
+    fontSize: "14px",
     marginTop: "5px",
   },
 };
