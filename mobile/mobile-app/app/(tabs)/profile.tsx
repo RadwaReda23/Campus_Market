@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { signOut } from 'firebase/auth';
+import { signOut, updateProfile, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../firebase';
 
 const mockProducts = [
@@ -13,21 +13,49 @@ const mockProducts = [
 export default function ProfileScreen() {
   const router = useRouter();
 
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+
+  // 🔥 الحل هنا
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setName(user.displayName || '');
+        setEmail(user.email || '');
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
   const handleLogout = async () => {
     await signOut(auth);
     router.replace('/Register');
   };
 
+  const handleUpdate = async () => {
+    const user = auth.currentUser;
+    if (user) {
+      await updateProfile(user, {
+        displayName: name,
+      });
+      alert("Profile updated ✅");
+    }
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
+      
       {/* Profile Header */}
       <View style={styles.profileHeader}>
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>M</Text>
+          <Text style={styles.avatarText}>
+            {name ? name.charAt(0).toUpperCase() : "?"}
+          </Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.profileName}>my name</Text>
-          <Text style={styles.profileRole}></Text>
+          <Text style={styles.profileName}>{name || "No Name"}</Text>
+          <Text style={styles.profileRole}>{email || ""}</Text>
         </View>
       </View>
 
@@ -50,19 +78,30 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>⚙️ إعدادات الحساب</Text>
 
-        {/* الاسم والايميل فاضي */}
+        {/* الاسم */}
         <View style={styles.uiBox}>
           <Text style={styles.label}>الاسم</Text>
-          <TextInput style={styles.input} placeholder="أدخل اسمك" value="" />
+          <TextInput
+            style={styles.input}
+            placeholder="أدخل اسمك"
+            value={name}
+            onChangeText={setName}
+          />
         </View>
 
+        {/* الإيميل */}
         <View style={styles.uiBox}>
           <Text style={styles.label}>الإيميل</Text>
-          <TextInput style={styles.input} placeholder="أدخل الإيميل" value="" keyboardType="email-address" />
+          <TextInput
+            style={styles.input}
+            placeholder="أدخل الإيميل"
+            value={email}
+            editable={false}
+          />
         </View>
 
         {/* زر Update */}
-        <TouchableOpacity style={styles.updateBtn}>
+        <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate}>
           <Text style={styles.updateText}>Update Profile</Text>
         </TouchableOpacity>
       </View>
@@ -71,6 +110,7 @@ export default function ProfileScreen() {
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Text style={styles.logoutText}>🚪 تسجيل الخروج</Text>
       </TouchableOpacity>
+
     </ScrollView>
   );
 }
@@ -132,11 +172,32 @@ const styles = StyleSheet.create({
 
   uiBox: { padding: 12 },
   label: { fontSize: 12, color: '#8a7d6b', marginBottom: 5 },
-  input: { padding: 10, borderWidth: 1, borderColor: '#ddd', borderRadius: 10, backgroundColor: '#fafafa' },
 
-  updateBtn: { backgroundColor: '#1a3a2a', padding: 12, margin: 12, borderRadius: 10, alignItems: 'center' },
+  input: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    backgroundColor: '#fafafa'
+  },
+
+  updateBtn: {
+    backgroundColor: '#1a3a2a',
+    padding: 12,
+    margin: 12,
+    borderRadius: 10,
+    alignItems: 'center'
+  },
+
   updateText: { color: 'white', fontWeight: 'bold' },
 
-  logoutBtn: { margin: 16, backgroundColor: '#c0392b', padding: 14, borderRadius: 12, alignItems: 'center' },
+  logoutBtn: {
+    margin: 16,
+    backgroundColor: '#c0392b',
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center'
+  },
+
   logoutText: { color: 'white', fontWeight: 'bold' }
 });
