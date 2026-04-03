@@ -8,63 +8,46 @@ const mockProducts = [
 
 export default function ProfilePage() {
 
+  const handleUpdate = () => {
+    alert("تم تحديث البيانات (UI فقط)");
+  };
+
   const handleLogout = () => {
-    alert("تم تسجيل الخروج!");
-    // هنا ممكن تعملي redirect
+    alert("تم تسجيل الخروج");
   };
 
   return (
-    <div style={{ background: "#f5f0e8", minHeight: "100vh", direction: "rtl", fontFamily: "Cairo" }}>
+    <div style={container}>
 
-      {/* HEADER */}
-      <div style={{
-        background: "#1a3a2a",
-        padding: "40px 24px",
-        display: "flex",
-        alignItems: "center",
-        gap: 20,
-        color: "white"
-      }}>
-        <div style={{
-          width: 70,
-          height: 70,
-          borderRadius: "50%",
-          background: "#c8a84b",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 28,
-          fontWeight: "900",
-          color: "#1a3a2a"
-        }}>
-          م
-        </div>
+      {/* ===== HEADER ===== */}
+      <div style={header}>
+        <div style={avatar}>م</div>
 
         <div>
-          <div style={{ fontSize: 20, fontWeight: "bold" }}>محمد أحمد السيد</div>
-          <div style={{ color: "#c8a84b", fontSize: 13 }}>🎓 طالب — الفرقة الثالثة، الفيزياء</div>
+          <div style={name}>محمد أحمد السيد</div>
+          <div style={role}>🎓 طالب — الفرقة الثالثة، الفيزياء</div>
 
-          <div style={{ display: "flex", gap: 25, marginTop: 10 }}>
+          <div style={statsRow}>
             {[
               { num: "12", label: "منتج" },
               { num: "8", label: "صفقة" },
               { num: "4.8⭐", label: "تقييم" },
             ].map((s, i) => (
-              <div key={i} style={{ textAlign: "center" }}>
-                <div style={{ fontWeight: "900" }}>{s.num}</div>
-                <div style={{ fontSize: 11, opacity: 0.7 }}>{s.label}</div>
+              <div key={i} style={statBox}>
+                <div style={statNum}>{s.num}</div>
+                <div style={statLabel}>{s.label}</div>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* PRODUCTS */}
-      <div style={cardStyle}>
-        <div style={titleStyle}>🛒 منتجاتي</div>
+      {/* ===== PRODUCTS ===== */}
+      <div style={card}>
+        <div style={title}>🛒 منتجاتي</div>
 
         {mockProducts.map(p => (
-          <div key={p.id} style={rowStyle}>
+          <div key={p.id} style={row}>
             <span style={{ fontSize: 24 }}>{p.image}</span>
 
             <div style={{ flex: 1 }}>
@@ -74,49 +57,39 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div style={{ color: "#c8a84b", fontWeight: "900" }}>
-              {p.price} ج
-            </div>
+            <div style={price}>{p.price} ج</div>
           </div>
         ))}
       </div>
 
-      {/* SETTINGS */}
-      <div style={cardStyle}>
-        <div style={titleStyle}>⚙️ إعدادات الحساب</div>
+      {/* ===== EDIT PROFILE (المهم) ===== */}
+      <div style={card}>
+        <div style={title}>⚙️ تعديل الحساب</div>
 
-        {[
-          { label: "الاسم", value: "محمد أحمد السيد", icon: "👤" },
-          { label: "البريد", value: "m.ahmed@sci.cu.edu.eg", icon: "📧" },
-          { label: "الرقم الجامعي", value: "20210234", icon: "🪪" },
-          { label: "القسم", value: "الفيزياء", icon: "⚛️" },
-        ].map((f, i) => (
-          <div key={i} style={rowStyle}>
-            <span>{f.icon}</span>
+        <div style={{ padding: 16 }}>
+          <label style={label}>الاسم</label>
+          <input
+            type="text"
+            defaultValue="محمد أحمد السيد"
+            style={input}
+          />
 
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: "#8a7d6b" }}>{f.label}</div>
-              <div style={{ fontWeight: "600" }}>{f.value}</div>
-            </div>
+          <label style={label}>الإيميل</label>
+          <input
+            type="email"
+            defaultValue="m.ahmed@sci.cu.edu.eg"
+            style={input}
+          />
 
-            <span style={{ color: "#c8a84b", cursor: "pointer" }}>تعديل</span>
-          </div>
-        ))}
+          <button style={updateBtn} onClick={handleUpdate}>
+            Update Profile
+          </button>
+        </div>
       </div>
 
-      {/* LOGOUT */}
+      {/* ===== LOGOUT ===== */}
       <div style={{ padding: 20 }}>
-        <button onClick={handleLogout} style={{
-          width: "100%",
-          background: "#c0392b",
-          color: "white",
-          padding: 14,
-          border: "none",
-          borderRadius: 12,
-          fontWeight: "bold",
-          cursor: "pointer",
-          fontSize: 15
-        }}>
+        <button style={logoutBtn} onClick={handleLogout}>
           🚪 تسجيل الخروج
         </button>
       </div>
@@ -125,25 +98,128 @@ export default function ProfilePage() {
   );
 }
 
-/* Styles */
-const cardStyle = {
+/* ================= STYLES ================= */
+
+const container = {
+  background: "#f5f0e8",
+  minHeight: "100vh",
+  direction: "rtl",
+  fontFamily: "Cairo, sans-serif"
+};
+
+const header = {
+  background: "#1a3a2a",
+  padding: "40px 24px",
+  display: "flex",
+  alignItems: "center",
+  gap: 20,
+  color: "white"
+};
+
+const avatar = {
+  width: 70,
+  height: 70,
+  borderRadius: "50%",
+  background: "#c8a84b",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 28,
+  fontWeight: "900",
+  color: "#1a3a2a"
+};
+
+const name = {
+  fontSize: 20,
+  fontWeight: "bold"
+};
+
+const role = {
+  color: "#c8a84b",
+  fontSize: 13,
+  marginTop: 4
+};
+
+const statsRow = {
+  display: "flex",
+  gap: 25,
+  marginTop: 10
+};
+
+const statBox = {
+  textAlign: "center"
+};
+
+const statNum = {
+  fontWeight: "900"
+};
+
+const statLabel = {
+  fontSize: 11,
+  opacity: 0.7
+};
+
+const card = {
   background: "white",
   margin: 16,
   borderRadius: 14,
-  overflow: "hidden",
   border: "1px solid #ddd3c0",
+  overflow: "hidden",
+  boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
 };
 
-const titleStyle = {
+const title = {
   padding: 14,
   fontWeight: "bold",
-  borderBottom: "1px solid #ddd3c0",
+  borderBottom: "1px solid #ddd3c0"
 };
 
-const rowStyle = {
+const row = {
   display: "flex",
   alignItems: "center",
   gap: 12,
   padding: 12,
-  borderBottom: "1px solid #f0ebe0",
+  borderBottom: "1px solid #f0ebe0"
+};
+
+const price = {
+  color: "#c8a84b",
+  fontWeight: "900"
+};
+
+const label = {
+  fontSize: 12,
+  color: "#8a7d6b"
+};
+
+const input = {
+  width: "100%",
+  padding: 10,
+  marginTop: 6,
+  marginBottom: 12,
+  borderRadius: 8,
+  border: "1px solid #ddd3c0",
+  fontSize: 13
+};
+
+const updateBtn = {
+  width: "100%",
+  background: "#1a3a2a",
+  color: "white",
+  padding: 12,
+  border: "none",
+  borderRadius: 10,
+  fontWeight: "bold",
+  cursor: "pointer"
+};
+
+const logoutBtn = {
+  width: "100%",
+  background: "#c0392b",
+  color: "white",
+  padding: 14,
+  border: "none",
+  borderRadius: 12,
+  fontWeight: "bold",
+  cursor: "pointer"
 };
