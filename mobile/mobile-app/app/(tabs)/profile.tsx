@@ -16,8 +16,8 @@ export default function ProfileScreen() {
   };
 
   const handleUpdate = () => {
-    // هنا ممكن تضيف منطق تحديث البيانات
     console.log('Updating profile:', { name, email });
+    // هنا ممكن تضيف منطق تحديث البيانات فعليًا
   };
 
   return (
@@ -28,8 +28,8 @@ export default function ProfileScreen() {
           <Text style={styles.avatarText}>م</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.profileName}>محمد أحمد السيد</Text>
-          <Text style={styles.profileRole}>🎓 طالب — الفرقة الثالثة، الفيزياء</Text>
+          <Text style={styles.profileName}>{name || "my name"}</Text>
+          <Text style={styles.profileRole}>{email || "my email"}</Text>
         </View>
       </View>
 
