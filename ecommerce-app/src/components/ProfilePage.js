@@ -1,4 +1,6 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { auth } from "../firebase";
+import { onAuthStateChanged, updateProfile, signOut } from "firebase/auth";
 
 const mockProducts = [
   { id: 1, title: "كتاب حساب التفاضل والتكامل", price: 45, image: "📚", views: 34 },
@@ -7,77 +9,76 @@ const mockProducts = [
 ];
 
 export default function ProfilePage() {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
 
-  const handleUpdate = () => {
-    alert("تم تحديث البيانات (UI فقط)");
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setName(user.displayName || "");
+        setEmail(user.email || "");
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleUpdate = async () => {
+    const user = auth.currentUser;
+    if (user) {
+      await updateProfile(user, { displayName: name });
+      alert("تم تحديث البيانات ✅");
+    }
   };
 
-  const handleLogout = () => {
-    alert("تم تسجيل الخروج");
+  const handleLogout = async () => {
+    await signOut(auth);
+    window.location.href = "/Register"; // redirect to login/register page
   };
 
   return (
     <div style={container}>
-
-      {/* ===== HEADER ===== */}
+      
+      {/* Header */}
       <div style={header}>
-        <div style={avatar}>م</div>
-
-        <div>
-          <div style={name}>محمد أحمد السيد</div>
-          <div style={role}>🎓 طالب — الفرقة الثالثة، الفيزياء</div>
-
-          <div style={statsRow}>
-            {[
-              { num: "12", label: "منتج" },
-              { num: "8", label: "صفقة" },
-              { num: "4.8⭐", label: "تقييم" },
-            ].map((s, i) => (
-              <div key={i} style={statBox}>
-                <div style={statNum}>{s.num}</div>
-                <div style={statLabel}>{s.label}</div>
-              </div>
-            ))}
-          </div>
+        <div style={avatar}>{name ? name.charAt(0).toUpperCase() : "?"}</div>
+        <div style={{ flex: 1 }}>
+          <div style={nameStyle}>{name || "No Name"}</div>
+          <div style={role}>{email || ""}</div>
         </div>
       </div>
 
-      {/* ===== PRODUCTS ===== */}
+      {/* Products */}
       <div style={card}>
         <div style={title}>🛒 منتجاتي</div>
-
         {mockProducts.map(p => (
           <div key={p.id} style={row}>
             <span style={{ fontSize: 24 }}>{p.image}</span>
-
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: "700" }}>{p.title}</div>
-              <div style={{ fontSize: 12, color: "#8a7d6b" }}>
-                👁 {p.views} مشاهدة
-              </div>
+              <div style={{ fontSize: 12, color: "#8a7d6b" }}>👁 {p.views} مشاهدة</div>
             </div>
-
             <div style={price}>{p.price} ج</div>
           </div>
         ))}
       </div>
 
-      {/* ===== EDIT PROFILE (المهم) ===== */}
+      {/* Edit Profile */}
       <div style={card}>
         <div style={title}>⚙️ تعديل الحساب</div>
-
         <div style={{ padding: 16 }}>
           <label style={label}>الاسم</label>
           <input
             type="text"
-            defaultValue="محمد أحمد السيد"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             style={input}
           />
 
           <label style={label}>الإيميل</label>
           <input
             type="email"
-            defaultValue="m.ahmed@sci.cu.edu.eg"
+            value={email}
+            readOnly
             style={input}
           />
 
@@ -87,7 +88,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* ===== LOGOUT ===== */}
+      {/* Logout */}
       <div style={{ padding: 20 }}>
         <button style={logoutBtn} onClick={handleLogout}>
           🚪 تسجيل الخروج
@@ -98,7 +99,7 @@ export default function ProfilePage() {
   );
 }
 
-/* ================= STYLES ================= */
+/* ============== STYLES ============== */
 
 const container = {
   background: "#f5f0e8",
@@ -129,7 +130,7 @@ const avatar = {
   color: "#1a3a2a"
 };
 
-const name = {
+const nameStyle = {
   fontSize: 20,
   fontWeight: "bold"
 };
@@ -138,25 +139,6 @@ const role = {
   color: "#c8a84b",
   fontSize: 13,
   marginTop: 4
-};
-
-const statsRow = {
-  display: "flex",
-  gap: 25,
-  marginTop: 10
-};
-
-const statBox = {
-  textAlign: "center"
-};
-
-const statNum = {
-  fontWeight: "900"
-};
-
-const statLabel = {
-  fontSize: 11,
-  opacity: 0.7
 };
 
 const card = {
@@ -189,13 +171,13 @@ const price = {
 
 const label = {
   fontSize: 12,
-  color: "#8a7d6b"
+  color: "#8a7d6b",
+  marginBottom: 5
 };
 
 const input = {
   width: "100%",
   padding: 10,
-  marginTop: 6,
   marginBottom: 12,
   borderRadius: 8,
   border: "1px solid #ddd3c0",
