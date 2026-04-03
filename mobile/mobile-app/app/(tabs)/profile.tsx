@@ -1,26 +1,27 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 
-const mockProducts = [
-  { id: 1, title: 'كتاب حساب التفاضل والتكامل', price: 45, image: '📚', views: 34 },
-  { id: 2, title: 'ميكروسكوب محمول', price: 320, image: '🔬', views: 87 },
-  { id: 3, title: 'كول روب معمل', price: 30, image: '🥼', views: 19 },
-];
-
 export default function ProfileScreen() {
   const router = useRouter();
+
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
 
   const handleLogout = async () => {
     await signOut(auth);
     router.replace('/Register');
   };
 
+  const handleUpdate = () => {
+    // هنا ممكن تضيف منطق تحديث البيانات
+    console.log('Updating profile:', { name, email });
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
-      
       {/* Profile Header */}
       <View style={styles.profileHeader}>
         <View style={styles.avatar}>
@@ -32,45 +33,36 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* My Products */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🛒 منتجاتي</Text>
-        {mockProducts.map(p => (
-          <View key={p.id} style={styles.productRow}>
-            <Text style={styles.productEmoji}>{p.image}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.productTitle}>{p.title}</Text>
-              <Text style={styles.productMeta}>👁 {p.views} مشاهدة</Text>
-            </View>
-            <Text style={styles.productPrice}>{p.price} ج</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Settings */}
+      {/* Settings Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>⚙️ إعدادات الحساب</Text>
-      </View>
 
-      {/* ⭐ YOUR TASK ADDED HERE (Mobile UI Section) */}
-      <View style={styles.section}>
-       
+        {/* Side by side inputs */}
+        <View style={styles.rowInputs}>
+          <View style={styles.uiBox}>
+            <Text style={styles.label}>My Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="أدخل اسمك"
+              value={name}
+              onChangeText={setName}
+            />
+          </View>
 
-        <View style={styles.uiBox}>
-          <Text style={styles.label}>الاسم</Text>
-          <View style={styles.fakeInput}>
-            <Text>محمد أحمد السيد</Text>
+          <View style={styles.uiBox}>
+            <Text style={styles.label}>My Email</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="أدخل الإيميل"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+            />
           </View>
         </View>
 
-        <View style={styles.uiBox}>
-          <Text style={styles.label}>الإيميل</Text>
-          <View style={styles.fakeInput}>
-            <Text>m.ahmed@sci.cu.edu.eg</Text>
-          </View>
-        </View>
-
-        <TouchableOpacity style={styles.updateBtn}>
+        {/* Update Button */}
+        <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate}>
           <Text style={styles.updateText}>Update Profile</Text>
         </TouchableOpacity>
       </View>
@@ -79,7 +71,6 @@ export default function ProfileScreen() {
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Text style={styles.logoutText}>🚪 تسجيل الخروج</Text>
       </TouchableOpacity>
-
     </ScrollView>
   );
 }
@@ -106,9 +97,7 @@ const styles = StyleSheet.create({
   },
 
   avatarText: { color: '#1a3a2a', fontSize: 26, fontWeight: '900' },
-
   profileName: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-
   profileRole: { color: '#c8a84b', fontSize: 12 },
 
   section: {
@@ -129,34 +118,15 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ddd3c0'
   },
 
-  productRow: {
+  rowInputs: {
     flexDirection: 'row',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0ebe0'
-  },
-
-  productEmoji: { fontSize: 24 },
-
-  productTitle: { fontSize: 13, fontWeight: '700' },
-
-  productMeta: { fontSize: 11, color: '#8a7d6b' },
-
-  productPrice: { fontWeight: 'bold', color: '#c8a84b' },
-
-  logoutBtn: {
-    margin: 16,
-    backgroundColor: '#c0392b',
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center'
-  },
-
-  logoutText: { color: 'white', fontWeight: 'bold' },
-
-  /* ⭐ New UI styles */
-  uiBox: {
+    justifyContent: 'space-between',
     padding: 12
+  },
+
+  uiBox: {
+    flex: 1,
+    marginHorizontal: 5
   },
 
   label: {
@@ -165,7 +135,7 @@ const styles = StyleSheet.create({
     marginBottom: 5
   },
 
-  fakeInput: {
+  input: {
     padding: 10,
     borderWidth: 1,
     borderColor: '#ddd',
@@ -181,8 +151,15 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
 
-  updateText: {
-    color: 'white',
-    fontWeight: 'bold'
-  }
+  updateText: { color: 'white', fontWeight: 'bold' },
+
+  logoutBtn: {
+    margin: 16,
+    backgroundColor: '#c0392b',
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center'
+  },
+
+  logoutText: { color: 'white', fontWeight: 'bold' }
 });
