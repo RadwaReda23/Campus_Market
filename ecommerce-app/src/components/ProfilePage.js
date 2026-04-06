@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { auth } from "../firebase";
 import { onAuthStateChanged, updateProfile, signOut } from "firebase/auth";
+
+const CLOUDINARY_CLOUD_NAME = "dgowyewii";
+const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
 
 const mockProducts = [
   { id: 1, title: "كتاب حساب التفاضل والتكامل", price: 45, image: "📚", views: 34 },
@@ -11,16 +14,55 @@ const mockProducts = [
 export default function ProfilePage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [photoURL, setPhotoURL] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setName(user.displayName || "");
         setEmail(user.email || "");
+        setPhotoURL(user.photoURL || null);
       }
     });
     return unsubscribe;
   }, []);
+
+  // ✅ رفع الصورة على Cloudinary
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("من فضلك اختر صورة فقط");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: "POST", body: formData }
+      );
+
+      const data = await response.json();
+      const url = data.secure_url;
+
+      await updateProfile(auth.currentUser, { photoURL: url });
+      setPhotoURL(url);
+      alert("تم تحديث صورة البروفايل ✅");
+    } catch (error) {
+      console.error(error);
+      alert("حصل خطأ أثناء رفع الصورة ❌");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleUpdate = async () => {
     const user = auth.currentUser;
@@ -32,18 +74,50 @@ export default function ProfilePage() {
 
   const handleLogout = async () => {
     await signOut(auth);
-    window.location.href = "/Register"; // redirect to login/register page
+    window.location.href = "/Register";
   };
 
   return (
     <div style={container}>
-      
+
       {/* Header */}
       <div style={header}>
-        <div style={avatar}>{name ? name.charAt(0).toUpperCase() : "?"}</div>
+
+        <div style={{ position: "relative", width: 70, height: 70 }}>
+          {photoURL ? (
+            <img src={photoURL} alt="profile" style={avatarImg} />
+          ) : (
+            <div style={avatar}>
+              {name ? name.charAt(0).toUpperCase() : "?"}
+            </div>
+          )}
+
+          <button
+            style={cameraBtn}
+            onClick={() => fileInputRef.current.click()}
+            title="تغيير الصورة"
+            disabled={uploading}
+          >
+            {uploading ? "⏳" : "📷"}
+          </button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={handlePhotoUpload}
+          />
+        </div>
+
         <div style={{ flex: 1 }}>
           <div style={nameStyle}>{name || "No Name"}</div>
           <div style={role}>{email || ""}</div>
+          {uploading && (
+            <div style={{ color: "#c8a84b", fontSize: 12, marginTop: 4 }}>
+              جاري رفع الصورة...
+            </div>
+          )}
         </div>
       </div>
 
@@ -128,6 +202,30 @@ const avatar = {
   fontSize: 28,
   fontWeight: "900",
   color: "#1a3a2a"
+};
+
+const avatarImg = {
+  width: 70,
+  height: 70,
+  borderRadius: "50%",
+  objectFit: "cover",
+  border: "3px solid #c8a84b"
+};
+
+const cameraBtn = {
+  position: "absolute",
+  bottom: 0,
+  left: 0,
+  background: "#c8a84b",
+  border: "none",
+  borderRadius: "50%",
+  width: 26,
+  height: 26,
+  fontSize: 13,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center"
 };
 
 const nameStyle = {
