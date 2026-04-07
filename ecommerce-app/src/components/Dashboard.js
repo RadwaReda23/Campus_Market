@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
-import { collection, addDoc, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, updateDoc, doc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
-import { COLORS, FONTS, mockMessages, navItems, mockLostFound } from "../constants";
+import { COLORS, FONTS, mockMessages, navItems } from "../constants";
 import HomePage from "./HomePage";
 import LibraryPage from "./LibraryPage";
 import ProfilePage from "./ProfilePage";
@@ -43,7 +43,6 @@ function AddProductModal({ onClose, onAdd }) {
     try {
       let imageURL = "";
 
-      // رفع الصورة على Cloudinary لو في صورة
       if (imageFile) {
         const formData = new FormData();
         formData.append("file", imageFile);
@@ -56,7 +55,6 @@ function AddProductModal({ onClose, onAdd }) {
         imageURL = data.secure_url;
       }
 
-      // حفظ المنتج في Firestore
       const product = {
         title: form.title,
         price: Number(form.price),
@@ -88,18 +86,13 @@ function AddProductModal({ onClose, onAdd }) {
   return (
     <div style={modalOverlay}>
       <div style={modalBox}>
-        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <h3 style={{ color: COLORS.primary, fontSize: 17 }}>➕ إضافة منتج جديد</h3>
           <button onClick={onClose} style={closeBtn}>✕</button>
         </div>
 
-        {/* صورة المنتج */}
         <div style={{ textAlign: "center", marginBottom: 16 }}>
-          <div
-            onClick={() => fileRef.current.click()}
-            style={imagePicker}
-          >
+          <div onClick={() => fileRef.current.click()} style={imagePicker}>
             {imagePreview ? (
               <img src={imagePreview} alt="preview"
                 style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 12 }} />
@@ -114,26 +107,16 @@ function AddProductModal({ onClose, onAdd }) {
             style={{ display: "none" }} onChange={handleImageChange} />
         </div>
 
-        {/* الحقول */}
         <div style={fieldGroup}>
           <label style={labelStyle}>اسم المنتج *</label>
-          <input
-            style={inputStyle}
-            placeholder="مثال: كتاب الفيزياء العامة"
-            value={form.title}
-            onChange={e => setForm({ ...form, title: e.target.value })}
-          />
+          <input style={inputStyle} placeholder="مثال: كتاب الفيزياء العامة"
+            value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
         </div>
 
         <div style={fieldGroup}>
           <label style={labelStyle}>السعر (جنيه) *</label>
-          <input
-            style={inputStyle}
-            type="number"
-            placeholder="0"
-            value={form.price}
-            onChange={e => setForm({ ...form, price: e.target.value })}
-          />
+          <input style={inputStyle} type="number" placeholder="0"
+            value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -144,7 +127,6 @@ function AddProductModal({ onClose, onAdd }) {
               {conditions.map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
-
           <div style={fieldGroup}>
             <label style={labelStyle}>الفئة</label>
             <select style={inputStyle} value={form.category}
@@ -162,19 +144,127 @@ function AddProductModal({ onClose, onAdd }) {
           </select>
         </div>
 
-        {/* زرار الإضافة */}
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{
-            width: "100%", background: loading ? COLORS.muted : COLORS.primary,
-            color: "white", border: "none", borderRadius: 10,
-            padding: "12px", fontSize: 14, fontWeight: 700,
-            cursor: loading ? "not-allowed" : "pointer",
-            fontFamily: "'Cairo', sans-serif", marginTop: 8,
-          }}
-        >
+        <button onClick={handleSubmit} disabled={loading} style={{
+          width: "100%", background: loading ? COLORS.muted : COLORS.primary,
+          color: "white", border: "none", borderRadius: 10,
+          padding: "12px", fontSize: 14, fontWeight: 700,
+          cursor: loading ? "not-allowed" : "pointer",
+          fontFamily: "'Cairo', sans-serif", marginTop: 8,
+        }}>
           {loading ? "جاري الإضافة..." : "✅ إضافة المنتج"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add Lost Modal ────────────────────────────────────────────────────────────
+function AddLostModal({ onClose, onAdd }) {
+  const [form, setForm] = useState({ title: "", description: "", location: "" });
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const fileRef = useRef(null);
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("من فضلك اختر صورة فقط"); return; }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleSubmit = async () => {
+    if (!form.title || !form.location) { alert("من فضلك ادخل الاسم والمكان"); return; }
+    setLoading(true);
+    try {
+      let imageURL = "";
+
+      if (imageFile) {
+        const formData = new FormData();
+        formData.append("file", imageFile);
+        formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+        const res = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+          { method: "POST", body: formData }
+        );
+        const data = await res.json();
+        imageURL = data.secure_url;
+      }
+
+      const item = {
+        title: form.title,
+        description: form.description,
+        location: form.location,
+        finder: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
+        image: imageURL ? "" : "🔍",
+        imageURL: imageURL,
+        claimed: false,
+        date: "الآن",
+        createdAt: new Date(),
+      };
+      const docRef = await addDoc(collection(db, "lostFound"), item);
+      onAdd({ id: docRef.id, ...item });
+      onClose();
+      alert("تم إضافة المفقود ✅");
+    } catch (err) {
+      console.error(err);
+      alert("حصل خطأ ❌");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={modalOverlay}>
+      <div style={modalBox}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h3 style={{ color: COLORS.primary, fontSize: 16 }}>🔍 إضافة مفقود</h3>
+          <button onClick={onClose} style={closeBtn}>✕</button>
+        </div>
+
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div onClick={() => fileRef.current.click()} style={imagePicker}>
+            {imagePreview ? (
+              <img src={imagePreview} alt="preview"
+                style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 12 }} />
+            ) : (
+              <div>
+                <div style={{ fontSize: 28 }}>📷</div>
+                <div style={{ fontSize: 11, color: COLORS.muted, marginTop: 4 }}>اضغط لإضافة صورة</div>
+              </div>
+            )}
+          </div>
+          <input ref={fileRef} type="file" accept="image/*"
+            style={{ display: "none" }} onChange={handleImageChange} />
+        </div>
+
+        <div style={fieldGroup}>
+          <label style={labelStyle}>اسم الشيء المفقود *</label>
+          <input style={inputStyle} placeholder="مثال: محفظة جلد بنية"
+            value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
+        </div>
+
+        <div style={fieldGroup}>
+          <label style={labelStyle}>وصف</label>
+          <input style={inputStyle} placeholder="مثال: وُجدت بالقرب من قاعة 101"
+            value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+        </div>
+
+        <div style={fieldGroup}>
+          <label style={labelStyle}>المكان *</label>
+          <input style={inputStyle} placeholder="مثال: مبنى A"
+            value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
+        </div>
+
+        <button onClick={handleSubmit} disabled={loading} style={{
+          width: "100%", background: loading ? COLORS.muted : COLORS.primary,
+          color: "white", border: "none", borderRadius: 10,
+          padding: "12px", fontSize: 14, fontWeight: 700,
+          cursor: loading ? "not-allowed" : "pointer",
+          fontFamily: "'Cairo', sans-serif", marginTop: 8,
+        }}>
+          {loading ? "جاري الإضافة..." : "✅ إضافة المفقود"}
         </button>
       </div>
     </div>
@@ -190,13 +280,12 @@ function ProductsPage() {
 
   const filters = ["الكل", "كتب", "معدات", "ملابس", "أدوات", "أخرى"];
 
-  // جيب المنتجات من Firestore
   useEffect(() => {
     const fetchProducts = async () => {
       try {
         const q = query(collection(db, "products"), orderBy("createdAt", "desc"));
         const snapshot = await getDocs(q);
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
         setProducts(data);
       } catch (err) {
         console.error(err);
@@ -211,16 +300,12 @@ function ProductsPage() {
     ? products
     : products.filter(p => p.category === activeFilter);
 
-  const handleAddProduct = (newProduct) => {
-    setProducts(prev => [newProduct, ...prev]);
-  };
-
   return (
     <>
       {showModal && (
         <AddProductModal
           onClose={() => setShowModal(false)}
-          onAdd={handleAddProduct}
+          onAdd={(newProduct) => setProducts(prev => [newProduct, ...prev])}
         />
       )}
 
@@ -288,37 +373,91 @@ function ProductsPage() {
 
 // ─── Lost & Found Page ─────────────────────────────────────────────────────────
 function LostFoundPage() {
+  const [lostItems, setLostItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+
+  // ✅ جيب المفقودات من Firestore
+  useEffect(() => {
+    const fetchLost = async () => {
+      try {
+        const q = query(collection(db, "lostFound"), orderBy("createdAt", "desc"));
+        const snap = await getDocs(q);
+        setLostItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLost();
+  }, []);
+
+  // ✅ المطالبة بمفقود وتحديث Firestore
+  const handleClaim = async (item) => {
+    try {
+      await updateDoc(doc(db, "lostFound", item.id), { claimed: true });
+      setLostItems(prev => prev.map(i => i.id === item.id ? { ...i, claimed: true } : i));
+    } catch (err) {
+      console.error(err);
+      alert("حصل خطأ ❌");
+    }
+  };
+
   return (
     <>
+      {showModal && (
+        <AddLostModal
+          onClose={() => setShowModal(false)}
+          onAdd={(item) => setLostItems(prev => [item, ...prev])}
+        />
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <p style={{ color: COLORS.muted, fontSize: 13 }}>لقيت حاجة في الكلية؟ سجلها هنا وساعد صاحبها يلاقيها</p>
-        <button className="add-btn">+ إضافة مفقود</button>
+        <button className="add-btn" onClick={() => setShowModal(true)}>+ إضافة مفقود</button>
       </div>
-      {mockLostFound.map(item => (
-        <div key={item.id} className="lost-item" style={{ marginBottom: 12 }}>
-          <span className="lost-emoji" style={{ fontSize: 40 }}>{item.image}</span>
-          <div className="lost-info">
-            <div className="lost-title" style={{ fontSize: 15 }}>{item.title}</div>
-            <div className="lost-desc">{item.description}</div>
-            <div className="lost-meta">
-              <span className="lost-tag">👤 {item.finder}</span>
-              <span className="lost-tag">📍 {item.location}</span>
-              <span className="lost-tag">🕐 {item.date}</span>
-              {item.claimed && <span className="lost-tag claimed-badge">✅ تم الاسترداد</span>}
+
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>جاري التحميل...</div>
+      ) : lostItems.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>لا توجد مفقودات</div>
+      ) : (
+        lostItems.map(item => (
+          <div key={item.id} className="lost-item" style={{ marginBottom: 12 }}>
+            {item.imageURL ? (
+              <img src={item.imageURL} alt={item.title}
+                style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+            ) : (
+              <span className="lost-emoji" style={{ fontSize: 40 }}>{item.image}</span>
+            )}
+            <div className="lost-info">
+              <div className="lost-title" style={{ fontSize: 15 }}>{item.title}</div>
+              <div className="lost-desc">{item.description}</div>
+              <div className="lost-meta">
+                <span className="lost-tag">👤 {item.finder}</span>
+                <span className="lost-tag">📍 {item.location}</span>
+                <span className="lost-tag">🕐 {item.date}</span>
+                {item.claimed && <span className="lost-tag claimed-badge">✅ تم الاسترداد</span>}
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
+              <button
+                className={`borrow-btn ${!item.claimed ? "btn-primary" : "btn-disabled"}`}
+                disabled={item.claimed}
+                onClick={() => !item.claimed && handleClaim(item)}
+              >
+                {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
+              </button>
+              <button style={{
+                padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
+                cursor: "pointer", color: COLORS.primary, fontWeight: 600
+              }}>💬 تواصل</button>
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
-            <button className={`borrow-btn ${!item.claimed ? "btn-primary" : "btn-disabled"}`} disabled={item.claimed}>
-              {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
-            </button>
-            <button style={{
-              padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
-              background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
-              cursor: "pointer", color: COLORS.primary, fontWeight: 600
-            }}>💬 تواصل</button>
-          </div>
-        </div>
-      ))}
+        ))
+      )}
     </>
   );
 }
