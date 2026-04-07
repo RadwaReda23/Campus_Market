@@ -176,9 +176,12 @@ export default function ProfilePage() {
         setUserData({ ...firestoreData, uid: user.uid, displayName: user.displayName, email: user.email, photoURL: user.photoURL });
 
         // جيب منتجات المستخدم
-        const q = query(collection(db, "products"), where("sellerId", "==", user.uid), orderBy("createdAt", "desc"));
+        const q = query(collection(db, "products"), where("sellerId", "==", user.uid));
         const snap = await getDocs(q);
-        const products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const products = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+        
         setMyProducts(products);
         setActiveProducts(products.filter(p => p.status === "active").length);
         setSoldProducts(products.filter(p => p.status === "sold").length);

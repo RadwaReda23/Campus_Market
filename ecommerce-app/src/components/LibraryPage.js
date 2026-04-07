@@ -55,6 +55,7 @@ function AddLibraryModal({ onClose, onAdd }) {
         available: true,
         borrower: null,
         addedBy: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
+        addedById: auth.currentUser?.uid,
         createdAt: new Date(),
       };
       const docRef = await addDoc(collection(db, "library"), item);
@@ -162,6 +163,7 @@ function AddLostModal({ onClose, onAdd }) {
         description: form.description,
         location: form.location,
         finder: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
+        finderId: auth.currentUser?.uid,
         image: imageURL ? "" : "🔍",
         imageURL: imageURL,
         claimed: false,
@@ -235,7 +237,7 @@ function AddLostModal({ onClose, onAdd }) {
 }
 
 // ─── LibraryPage ───────────────────────────────────────────────────────────────
-export default function LibraryPage() {
+export default function LibraryPage({ onStartChat }) {
   const [activeLibraryTab, setActiveLibraryTab] = useState("borrow");
 
   // Library state
@@ -363,13 +365,31 @@ export default function LibraryPage() {
                       {item.available ? " متاح للاستعارة" : ` مستعار بواسطة: ${item.borrower}`}
                     </div>
                   </div>
-                  <button
-                    className={`borrow-btn ${item.available ? "btn-primary" : "btn-disabled"}`}
-                    disabled={!item.available}
-                    onClick={() => item.available && handleBorrow(item)}
-                  >
-                    {item.available ? "استعر الآن" : "غير متاح"}
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start", marginTop: 12 }}>
+                    <button
+                      className={`borrow-btn ${item.available ? "btn-primary" : "btn-disabled"}`}
+                      disabled={!item.available}
+                      onClick={() => item.available && handleBorrow(item)}
+                    >
+                      {item.available ? "استعر الآن" : "غير متاح"}
+                    </button>
+                    {item.addedById && auth.currentUser?.uid !== item.addedById && (
+                      <button
+                        onClick={() => onStartChat && onStartChat({
+                          id: item.id,
+                          title: item.title,
+                          sellerId: item.addedById,
+                          seller: item.addedBy
+                        })}
+                        style={{
+                          padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                          background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
+                          cursor: "pointer", color: COLORS.primary, fontWeight: 600
+                        }}>
+                        💬 تواصل
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -411,13 +431,31 @@ export default function LibraryPage() {
                       {item.claimed && <span className="lost-tag claimed-badge">✅ تم الاسترداد</span>}
                     </div>
                   </div>
-                  <button
-                    className={`borrow-btn ${!item.claimed ? "btn-primary" : "btn-disabled"}`}
-                    disabled={item.claimed}
-                    onClick={() => !item.claimed && handleClaim(item)}
-                  >
-                    {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start", marginTop: 12 }}>
+                    <button
+                      className={`borrow-btn ${!item.claimed ? "btn-primary" : "btn-disabled"}`}
+                      disabled={item.claimed}
+                      onClick={() => !item.claimed && handleClaim(item)}
+                    >
+                      {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
+                    </button>
+                    {item.finderId && auth.currentUser?.uid !== item.finderId && (
+                      <button
+                        onClick={() => onStartChat && onStartChat({
+                          id: item.id,
+                          title: item.title,
+                          sellerId: item.finderId,
+                          seller: item.finder
+                        })}
+                        style={{
+                          padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                          background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
+                          cursor: "pointer", color: COLORS.primary, fontWeight: 600
+                        }}>
+                        💬 تواصل
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}

@@ -250,6 +250,7 @@ function AddLostModal({ onClose, onAdd }) {
         description: form.description,
         location: form.location,
         finder: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
+        finderId: auth.currentUser?.uid,
         image: imageURL ? "" : "🔍",
         imageURL: imageURL,
         claimed: false,
@@ -457,7 +458,7 @@ function ProductsPage({ searchQuery = "", onStartChat }) {
 }
 
 // ─── Lost & Found Page ─────────────────────────────────────────────────────────
-function LostFoundPage() {
+function LostFoundPage({ onStartChat }) {
   const [lostItems, setLostItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -534,11 +535,22 @@ function LostFoundPage() {
               >
                 {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
               </button>
-              <button style={{
-                padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
-                background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
-                cursor: "pointer", color: COLORS.primary, fontWeight: 600
-              }}>💬 تواصل</button>
+              {item.finderId && auth.currentUser?.uid !== item.finderId && (
+                <button
+                  onClick={() => onStartChat({
+                    id: item.id,
+                    title: item.title,
+                    sellerId: item.finderId,
+                    seller: item.finder
+                  })}
+                  style={{
+                    padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                    background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
+                    cursor: "pointer", color: COLORS.primary, fontWeight: 600
+                  }}>
+                  💬 تواصل
+                </button>
+              )}
             </div>
           </div>
         ))
@@ -755,8 +767,8 @@ export default function Dashboard({ user }) {
   const pageMap = {
     home: <HomePage setActivePage={setActivePage} />,
     products: <ProductsPage searchQuery={searchQuery} onStartChat={startChat} />,
-    library: <LibraryPage />,
-    lostfound: <LostFoundPage />,
+    library: <LibraryPage onStartChat={startChat} />,
+    lostfound: <LostFoundPage onStartChat={startChat} />,
     messages: <MessagesPage onOpenChat={openExistingChat} />,
     profile: <ProfilePage />,
     chat: <ChatView chatData={currentChat} onBack={() => setActivePage("messages")} />
