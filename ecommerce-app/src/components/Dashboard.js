@@ -12,6 +12,58 @@ import ProfilePage from "./ProfilePage";
 const CLOUDINARY_CLOUD_NAME = "dgowyewii";
 const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
 
+// ─── Search Hook ────────────────────────────────────────────────────────────────
+function useSearch(searchQuery) {
+  const [results, setResults] = useState({ products: [], library: [], lostFound: [] });
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (!searchQuery || searchQuery.trim().length < 2) {
+      setResults({ products: [], library: [], lostFound: [] });
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      const q = searchQuery.trim().toLowerCase();
+      try {
+        const [prodSnap, libSnap, lostSnap] = await Promise.all([
+          getDocs(query(collection(db, "products"), orderBy("createdAt", "desc"))),
+          getDocs(query(collection(db, "library"), orderBy("createdAt", "desc"))),
+          getDocs(query(collection(db, "lostFound"), orderBy("createdAt", "desc"))),
+        ]);
+
+        const matchStr = (val) => val && String(val).toLowerCase().includes(q);
+
+        const products = prodSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(p => matchStr(p.title) || matchStr(p.category) || matchStr(p.seller) || matchStr(p.condition))
+          .slice(0, 5);
+
+        const library = libSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(i => matchStr(i.title) || matchStr(i.category))
+          .slice(0, 3);
+
+        const lostFound = lostSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(i => matchStr(i.title) || matchStr(i.description) || matchStr(i.location))
+          .slice(0, 3);
+
+        setResults({ products, library, lostFound });
+      } catch (err) {
+        console.error("Search error:", err);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  return { results, searching };
+}
+
 // ─── Add Product Modal ─────────────────────────────────────────────────────────
 function AddProductModal({ onClose, onAdd }) {
   const [form, setForm] = useState({
@@ -272,7 +324,7 @@ function AddLostModal({ onClose, onAdd }) {
 }
 
 // ─── Products Page ─────────────────────────────────────────────────────────────
-function ProductsPage() {
+function ProductsPage({ searchQuery = "" }) {
   const [activeFilter, setActiveFilter] = useState("الكل");
   const [products, setProducts] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -296,9 +348,18 @@ function ProductsPage() {
     fetchProducts();
   }, []);
 
-  const filtered = activeFilter === "الكل"
-    ? products
-    : products.filter(p => p.category === activeFilter);
+  const filtered = products
+    .filter(p => activeFilter === "الكل" || p.category === activeFilter)
+    .filter(p => {
+      if (!searchQuery || searchQuery.trim().length < 2) return true;
+      const q = searchQuery.trim().toLowerCase();
+      return (
+        (p.title && p.title.toLowerCase().includes(q)) ||
+        (p.category && p.category.toLowerCase().includes(q)) ||
+        (p.seller && p.seller.toLowerCase().includes(q)) ||
+        (p.condition && p.condition.toLowerCase().includes(q))
+      );
+    });
 
   return (
     <>
@@ -307,6 +368,19 @@ function ProductsPage() {
           onClose={() => setShowModal(false)}
           onAdd={(newProduct) => setProducts(prev => [newProduct, ...prev])}
         />
+      )}
+
+      {searchQuery && searchQuery.trim().length >= 2 && (
+        <div style={{
+          background: "linear-gradient(135deg, #fffbf0, #fef9ec)",
+          border: `1px solid ${COLORS.accent}44`,
+          borderRadius: 10, padding: "10px 16px", marginBottom: 16,
+          display: "flex", alignItems: "center", gap: 8, fontSize: 13,
+        }}>
+          <span>🔍</span>
+          <span>نتائج البحث عن: <strong style={{ color: COLORS.primary }}>"{searchQuery}"</strong></span>
+          <span style={{ color: COLORS.muted, marginRight: "auto" }}>{filtered.length} منتج</span>
+        </div>
       )}
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -544,7 +618,24 @@ const inputStyle = {
 export default function Dashboard({ user }) {
   const [activePage, setActivePage] = useState("home");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchRef = useRef(null);
   const navigate = useNavigate();
+
+  const { results, searching } = useSearch(searchQuery);
+  const totalResults = results.products.length + results.library.length + results.lostFound.length;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowSearchDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const unreadCount = mockMessages.filter(m => m.unread).length;
 
@@ -557,9 +648,15 @@ export default function Dashboard({ user }) {
     ? user.displayName[0].toUpperCase()
     : user?.email?.[0].toUpperCase() ?? "م";
 
+  const handleSearchResultClick = (page) => {
+    setActivePage(page);
+    setSearchQuery("");
+    setShowSearchDropdown(false);
+  };
+
   const pageMap = {
     home: <HomePage setActivePage={setActivePage} />,
-    products: <ProductsPage />,
+    products: <ProductsPage searchQuery={searchQuery} />,
     library: <LibraryPage />,
     lostfound: <LostFoundPage />,
     messages: <MessagesPage />,
@@ -603,8 +700,9 @@ export default function Dashboard({ user }) {
         .topbar { background: white; padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid ${COLORS.border}; position: sticky; top: 0; z-index: 50; }
         .page-title { font-size: 20px; font-weight: 700; color: ${COLORS.primary}; }
         .topbar-actions { display: flex; align-items: center; gap: 16px; }
-        .search-box { display: flex; align-items: center; gap: 8px; background: ${COLORS.light}; border: 1px solid ${COLORS.border}; border-radius: 10px; padding: 8px 14px; }
-        .search-box input { border: none; background: transparent; font-family: 'Cairo', sans-serif; font-size: 13px; outline: none; width: 200px; direction: rtl; color: ${COLORS.primary}; }
+        .search-box { display: flex; align-items: center; gap: 8px; background: ${COLORS.light}; border: 1px solid ${COLORS.border}; border-radius: 10px; padding: 8px 14px; transition: border-color 0.2s; }
+        .search-box:focus-within { border-color: ${COLORS.accent}; }
+        .search-box input { border: none; background: transparent; font-family: 'Cairo', sans-serif; font-size: 13px; outline: none; width: 260px; direction: rtl; color: ${COLORS.primary}; }
         .search-box input::placeholder { color: ${COLORS.muted}; }
         .avatar { width: 36px; height: 36px; background: linear-gradient(135deg, ${COLORS.primary}, ${COLORS.accent}); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 14px; cursor: pointer; }
         .content { padding: 28px; flex: 1; }
@@ -724,9 +822,150 @@ export default function Dashboard({ user }) {
               {navItems.find(n => n.id === activePage)?.label}
             </div>
             <div className="topbar-actions">
-              <div className="search-box">
-                <span>🔍</span>
-                <input placeholder="ابحث في السوق..." />
+              <div ref={searchRef} style={{ position: "relative" }}>
+                <div className="search-box">
+                  <span>{searching ? "⏳" : "🔍"}</span>
+                  <input
+                    placeholder="ابحث في المنتجات، المكتبة، المفقودات..."
+                    value={searchQuery}
+                    onChange={e => { setSearchQuery(e.target.value); setShowSearchDropdown(true); }}
+                    onFocus={() => setShowSearchDropdown(true)}
+                  />
+                  {searchQuery && (
+                    <span
+                      onClick={() => { setSearchQuery(""); setShowSearchDropdown(false); }}
+                      style={{ cursor: "pointer", color: COLORS.muted, fontSize: 14, padding: "0 4px" }}
+                    >✕</span>
+                  )}
+                </div>
+
+                {/* Search Dropdown */}
+                {showSearchDropdown && searchQuery.trim().length >= 2 && (
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 8px)",
+                    right: 0, width: 420, background: "white",
+                    borderRadius: 14, boxShadow: "0 12px 40px rgba(0,0,0,0.15)",
+                    border: `1px solid ${COLORS.border}`, zIndex: 999,
+                    overflow: "hidden", direction: "rtl",
+                    fontFamily: "'Cairo', sans-serif",
+                  }}>
+                    {searching ? (
+                      <div style={{ padding: "20px", textAlign: "center", color: COLORS.muted, fontSize: 13 }}>
+                        ⏳ جاري البحث...
+                      </div>
+                    ) : totalResults === 0 ? (
+                      <div style={{ padding: "20px", textAlign: "center", color: COLORS.muted, fontSize: 13 }}>
+                        🔍 لا توجد نتائج لـ "{searchQuery}"
+                      </div>
+                    ) : (
+                      <div>
+                        {/* Products Results */}
+                        {results.products.length > 0 && (
+                          <div>
+                            <div style={{ padding: "10px 16px 6px", fontSize: 11, fontWeight: 700, color: COLORS.muted, background: COLORS.light, display: "flex", justifyContent: "space-between" }}>
+                              <span>🛒 المنتجات</span>
+                              <span style={{ color: COLORS.accent }}>{results.products.length} نتيجة</span>
+                            </div>
+                            {results.products.map(p => (
+                              <div key={p.id}
+                                onClick={() => handleSearchResultClick("products")}
+                                style={{
+                                  padding: "10px 16px", display: "flex", alignItems: "center",
+                                  gap: 10, cursor: "pointer", borderBottom: `1px solid ${COLORS.light}`,
+                                  transition: "background 0.15s",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = COLORS.light}
+                                onMouseLeave={e => e.currentTarget.style.background = "white"}
+                              >
+                                <div style={{ width: 36, height: 36, borderRadius: 8, background: COLORS.light, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+                                  {p.imageURL
+                                    ? <img src={p.imageURL} alt={p.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                    : <span style={{ fontSize: 18 }}>{p.image || "📦"}</span>
+                                  }
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.primary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.title}</div>
+                                  <div style={{ fontSize: 11, color: COLORS.muted }}>{p.category} · {p.seller}</div>
+                                </div>
+                                <div style={{ fontSize: 13, fontWeight: 900, color: COLORS.accent, flexShrink: 0 }}>{p.price} ج</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Library Results */}
+                        {results.library.length > 0 && (
+                          <div>
+                            <div style={{ padding: "10px 16px 6px", fontSize: 11, fontWeight: 700, color: COLORS.muted, background: COLORS.light, display: "flex", justifyContent: "space-between" }}>
+                              <span>📚 المكتبة</span>
+                              <span style={{ color: COLORS.accent }}>{results.library.length} نتيجة</span>
+                            </div>
+                            {results.library.map(item => (
+                              <div key={item.id}
+                                onClick={() => handleSearchResultClick("library")}
+                                style={{
+                                  padding: "10px 16px", display: "flex", alignItems: "center",
+                                  gap: 10, cursor: "pointer", borderBottom: `1px solid ${COLORS.light}`,
+                                  transition: "background 0.15s",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = COLORS.light}
+                                onMouseLeave={e => e.currentTarget.style.background = "white"}
+                              >
+                                <span style={{ fontSize: 24, flexShrink: 0 }}>{item.image || "📦"}</span>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.primary }}>{item.title}</div>
+                                  <div style={{ fontSize: 11 }}>
+                                    <span style={{ color: item.available ? COLORS.success : COLORS.danger }}>
+                                      {item.available ? "✅ متاح" : "❌ مستعار"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Lost & Found Results */}
+                        {results.lostFound.length > 0 && (
+                          <div>
+                            <div style={{ padding: "10px 16px 6px", fontSize: 11, fontWeight: 700, color: COLORS.muted, background: COLORS.light, display: "flex", justifyContent: "space-between" }}>
+                              <span>🔍 المفقودات</span>
+                              <span style={{ color: COLORS.accent }}>{results.lostFound.length} نتيجة</span>
+                            </div>
+                            {results.lostFound.map(item => (
+                              <div key={item.id}
+                                onClick={() => handleSearchResultClick("lostfound")}
+                                style={{
+                                  padding: "10px 16px", display: "flex", alignItems: "center",
+                                  gap: 10, cursor: "pointer", borderBottom: `1px solid ${COLORS.light}`,
+                                  transition: "background 0.15s",
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = COLORS.light}
+                                onMouseLeave={e => e.currentTarget.style.background = "white"}
+                              >
+                                <span style={{ fontSize: 24, flexShrink: 0 }}>{item.image || "🔍"}</span>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: COLORS.primary }}>{item.title}</div>
+                                  <div style={{ fontSize: 11, color: COLORS.muted }}>📍 {item.location}</div>
+                                </div>
+                                {item.claimed && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 10, background: "#d4f4e0", color: COLORS.success }}>مُسترد</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Footer */}
+                        <div style={{ padding: "10px 16px", background: COLORS.light, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 11, color: COLORS.muted }}>{totalResults} نتيجة إجمالية</span>
+                          <span
+                            style={{ fontSize: 11, color: COLORS.accent, cursor: "pointer", fontWeight: 700 }}
+                            onClick={() => { handleSearchResultClick("products"); }}
+                          >عرض كل المنتجات ←</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div style={{ position: "relative", cursor: "pointer" }} onClick={() => setActivePage("messages")}>
                 <span style={{ fontSize: 20 }}>🔔</span>
