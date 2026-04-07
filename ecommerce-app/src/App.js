@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "./firebase";
+import { auth, db } from "./firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import Login from "./pages/Login";
 import SignUp from "./pages/RegisterAndLogin";
 import ForgetPassword from "./pages/forgetPassword";
@@ -13,9 +14,26 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+
+      // إنشاء user document في Firestore لو مش موجود
+      if (currentUser) {
+        const userRef = doc(db, "users", currentUser.uid);
+        const userSnap = await getDoc(userRef);
+        if (!userSnap.exists()) {
+          await setDoc(userRef, {
+            displayName: currentUser.displayName || "",
+            email: currentUser.email || "",
+            photoURL: currentUser.photoURL || "",
+            role: "طالب", // default - يقدر يغيره
+            ratingSum: 0,
+            ratingCount: 0,
+            createdAt: new Date(),
+          });
+        }
+      }
     });
     return () => unsubscribe();
   }, []);

@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
-import { collection, addDoc, getDocs, query, orderBy, updateDoc, doc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, updateDoc, doc, onSnapshot, where } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
 import { COLORS, FONTS, mockMessages, navItems } from "../constants";
 import HomePage from "./HomePage";
 import LibraryPage from "./LibraryPage";
 import ProfilePage from "./ProfilePage";
+import ChatView from "./ChatView";
 
 const CLOUDINARY_CLOUD_NAME = "dgowyewii";
 const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
@@ -324,7 +325,7 @@ function AddLostModal({ onClose, onAdd }) {
 }
 
 // ─── Products Page ─────────────────────────────────────────────────────────────
-function ProductsPage({ searchQuery = "" }) {
+function ProductsPage({ searchQuery = "", onStartChat }) {
   const [activeFilter, setActiveFilter] = useState("الكل");
   const [products, setProducts] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -434,7 +435,17 @@ function ProductsPage({ searchQuery = "" }) {
                       p.sellerType === "خريجة" || p.sellerType === "خريج" ? "type-grad" : "type-staff"
                     }`}>{p.sellerType}</span>
                   </div>
-                  <div className="product-views">👁 {p.views}</div>
+                  <div className="product-views">
+                    {auth.currentUser?.uid !== p.sellerId ? (
+                      <button onClick={(e) => { e.stopPropagation(); onStartChat(p); }} style={{
+                        padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                        background: COLORS.primary, color: "white", fontSize: 11, fontFamily: "'Cairo', sans-serif",
+                        cursor: "pointer", fontWeight: 700
+                      }}>💬 تواصل</button>
+                    ) : (
+                      <span>👁 {p.views}</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -537,35 +548,77 @@ function LostFoundPage() {
 }
 
 // ─── Messages Page ─────────────────────────────────────────────────────────────
-function MessagesPage() {
-  const unreadCount = mockMessages.filter(m => m.unread).length;
+
+function MessagesPage({ onOpenChat }) {
+  const [conversations, setConversations] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    
+    const q = query(
+      collection(db, "conversations"),
+      where("participants", "array-contains", auth.currentUser.uid),
+      orderBy("lastMessageTime", "desc")
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setConversations(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const unreadCount = conversations.filter(c => c.unreadCount?.[auth.currentUser?.uid] > 0).length;
+
   return (
     <>
       <div style={{ marginBottom: 16, display: "flex", gap: 8 }}>
         <button className="filter-chip active">الكل</button>
         <button className="filter-chip">غير مقروءة ({unreadCount})</button>
-        <button className="filter-chip">المنتجات</button>
-        <button className="filter-chip">المفقودات</button>
       </div>
-      {mockMessages.map(msg => (
-        <div key={msg.id} className={`message-item ${msg.unread ? "unread" : ""}`}>
-          <div className="msg-avatar">{msg.from[0]}</div>
-          <div className="msg-info">
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="msg-from">{msg.from}</span>
-              {msg.unread && (
-                <span style={{ background: COLORS.accent, color: COLORS.primary, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10 }}>جديد</span>
-              )}
+
+      {loading ? (
+         <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>جاري التحميل...</div>
+      ) : conversations.length === 0 ? (
+         <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
+            لا توجد محادثات حتى الآن
+         </div>
+      ) : (
+        conversations.map(conv => {
+          const isUnread = conv.unreadCount?.[auth.currentUser?.uid] > 0;
+          const otherUserId = conv.participants.find(id => id !== auth.currentUser?.uid);
+          const otherUserName = conv.participantNames?.[otherUserId] || "مستخدم";
+
+          return (
+            <div 
+              key={conv.id} 
+              className={`message-item ${isUnread ? "unread" : ""}`}
+              onClick={() => onOpenChat({ conversationId: conv.id, ...conv })}
+            >
+              <div className="msg-avatar">{otherUserName[0].toUpperCase()}</div>
+              <div className="msg-info">
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="msg-from">{otherUserName}</span>
+                  {isUnread && (
+                    <span style={{ background: COLORS.danger, color: "white", fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 10 }}>{conv.unreadCount[auth.currentUser.uid]} جديد</span>
+                  )}
+                </div>
+                <div className="msg-product">بخصوص: {conv.productTitle}</div>
+                <div className="msg-text">{conv.lastMessage || "بدأت المحادثة"}</div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end", flexShrink: 0 }}>
+                <span className="msg-time">
+                  {conv.lastMessageTime?.toDate().toLocaleDateString("ar-EG") || ""}
+                </span>
+                <button className="borrow-btn btn-primary">فتح</button>
+              </div>
             </div>
-            <div className="msg-product">📦 {msg.product}</div>
-            <div className="msg-text">{msg.message}</div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-            <span className="msg-time">{msg.time}</span>
-            <button className="borrow-btn btn-primary">رد</button>
-          </div>
-        </div>
-      ))}
+          );
+        })
+      )}
     </>
   );
 }
@@ -620,11 +673,33 @@ export default function Dashboard({ user }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [currentChat, setCurrentChat] = useState(null);
   const searchRef = useRef(null);
   const navigate = useNavigate();
 
   const { results, searching } = useSearch(searchQuery);
   const totalResults = results.products.length + results.library.length + results.lostFound.length;
+
+  // Real-time unread messages count for topbar
+  const [globalUnreadCount, setGlobalUnreadCount] = useState(0);
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const q = query(
+      collection(db, "conversations"),
+      where("participants", "array-contains", auth.currentUser.uid)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      let count = 0;
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.unreadCount?.[auth.currentUser.uid] > 0) {
+          count += data.unreadCount[auth.currentUser.uid];
+        }
+      });
+      setGlobalUnreadCount(count);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -636,8 +711,6 @@ export default function Dashboard({ user }) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const unreadCount = mockMessages.filter(m => m.unread).length;
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -654,13 +727,39 @@ export default function Dashboard({ user }) {
     setShowSearchDropdown(false);
   };
 
+  const startChat = (productData) => {
+    setCurrentChat({
+      productId: productData.id,
+      productTitle: productData.title,
+      sellerId: productData.sellerId,
+      sellerName: productData.seller,
+      buyerId: auth.currentUser?.uid,
+      buyerName: auth.currentUser?.displayName || auth.currentUser?.email
+    });
+    setActivePage("chat");
+  };
+
+  const openExistingChat = (convData) => {
+    const isBuyer = auth.currentUser.uid !== convData.participants[1];
+    setCurrentChat({
+      conversationId: convData.id,
+      productId: convData.productId,
+      productTitle: convData.productTitle,
+      sellerId: convData.participants[1], 
+      buyerId: convData.participants[0],
+      participantNames: convData.participantNames
+    });
+    setActivePage("chat");
+  };
+
   const pageMap = {
     home: <HomePage setActivePage={setActivePage} />,
-    products: <ProductsPage searchQuery={searchQuery} />,
+    products: <ProductsPage searchQuery={searchQuery} onStartChat={startChat} />,
     library: <LibraryPage />,
     lostfound: <LostFoundPage />,
-    messages: <MessagesPage />,
+    messages: <MessagesPage onOpenChat={openExistingChat} />,
     profile: <ProfilePage />,
+    chat: <ChatView chatData={currentChat} onBack={() => setActivePage("messages")} />
   };
 
   return (
@@ -802,8 +901,8 @@ export default function Dashboard({ user }) {
                 onClick={() => setActivePage(item.id)}>
                 <span className="nav-icon">{item.icon}</span>
                 {sidebarOpen && <span className="nav-label">{item.label}</span>}
-                {item.id === "messages" && unreadCount > 0 && sidebarOpen && (
-                  <span className="badge">{unreadCount}</span>
+                {globalUnreadCount > 0 && (
+                  <span className="badge">{globalUnreadCount}</span>
                 )}
               </div>
             ))}
@@ -818,8 +917,8 @@ export default function Dashboard({ user }) {
         <div className="main">
           <div className="topbar">
             <div className="page-title">
-              {navItems.find(n => n.id === activePage)?.icon}{" "}
-              {navItems.find(n => n.id === activePage)?.label}
+              {navItems.find(n => n.id === activePage)?.icon || "💬"}{" "}
+              {navItems.find(n => n.id === activePage)?.label || "الدردشة"}
             </div>
             <div className="topbar-actions">
               <div ref={searchRef} style={{ position: "relative" }}>
@@ -969,14 +1068,14 @@ export default function Dashboard({ user }) {
               </div>
               <div style={{ position: "relative", cursor: "pointer" }} onClick={() => setActivePage("messages")}>
                 <span style={{ fontSize: 20 }}>🔔</span>
-                {unreadCount > 0 && (
+                {globalUnreadCount > 0 && (
                   <span style={{
                     position: "absolute", top: -4, left: -4,
                     background: COLORS.danger, color: "white",
                     width: 16, height: 16, borderRadius: "50%",
                     fontSize: 9, fontWeight: 700,
                     display: "flex", alignItems: "center", justifyContent: "center"
-                  }}>{unreadCount}</span>
+                  }}>{globalUnreadCount}</span>
                 )}
               </div>
               <div className="avatar" onClick={() => setActivePage("profile")}>{avatarLetter}</div>
