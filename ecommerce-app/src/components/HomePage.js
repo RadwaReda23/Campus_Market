@@ -1,28 +1,98 @@
-import { COLORS, mockProducts, mockLostFound, mockMessages } from "../constants";
+import { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { collection, getDocs, query, orderBy, limit } from "firebase/firestore";
+import { COLORS } from "../constants";
 
 export default function HomePage({ setActivePage }) {
+  const [products, setProducts] = useState([]);
+  const [lostItems, setLostItems] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [stats, setStats] = useState({
+    activeProducts: 0,
+    completedDeals: 0,
+    registeredUsers: 0,
+    libraryItems: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  // Fetch real data from Firestore
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch products
+        const productsQuery = query(collection(db, "products"), orderBy("createdAt", "desc"), limit(4));
+        const productsSnapshot = await getDocs(productsQuery);
+        const productsData = productsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setProducts(productsData);
+
+        // Fetch lost items
+        const lostQuery = query(collection(db, "lostFound"), orderBy("createdAt", "desc"), limit(2));
+        const lostSnapshot = await getDocs(lostQuery);
+        const lostData = lostSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setLostItems(lostData.filter(item => !item.claimed));
+
+        // Fetch messages (mock for now - you'll need to implement messages collection)
+        setMessages([
+          { id: 1, from: "System", product: "No messages yet", message: "Messages feature coming soon!", time: "Now", unread: false }
+        ]);
+
+        // Calculate stats
+        const allProductsQuery = query(collection(db, "products"));
+        const allProductsSnapshot = await getDocs(allProductsQuery);
+        const activeProductsCount = allProductsSnapshot.docs.filter(doc => doc.data().status === "active").length;
+
+        const libraryQuery = query(collection(db, "library"));
+        const librarySnapshot = await getDocs(libraryQuery);
+        const libraryItemsCount = librarySnapshot.size;
+
+        setStats({
+          activeProducts: activeProductsCount,
+          completedDeals: Math.floor(activeProductsCount * 0.6), // Estimate
+          registeredUsers: Math.floor(activeProductsCount * 8.5), // Estimate
+          libraryItems: libraryItemsCount
+        });
+
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>
+        <div style={{ fontSize: 24 }}>Loading...</div>
+      </div>
+    );
+  }
   return (
     <>
       <div className="alert-strip">
         <span>📢</span>
-        <strong>جديد!</strong> تم إضافة 5 منتجات جديدة اليوم — تفقد المنتجات الأحدث
+        <strong>جديد!</strong> Added {products.length} new products today — check out the latest
         <span
           style={{ marginRight: "auto", color: COLORS.accent, cursor: "pointer", fontWeight: 600 }}
           onClick={() => setActivePage("products")}
         >
-          عرض الكل ←
+          View All ←
         </span>
       </div>
 
       <div className="stats-grid">
         {[
-          { label: "منتج نشط", value: "142", icon: "🛒", color: COLORS.primary },
-          { label: "صفقة مكتملة", value: "89", icon: "✅", color: COLORS.success },
-          { label: "مستخدم مسجل", value: "1.2k", icon: "👥", color: COLORS.info },
-          { label: "عنصر في المكتبة", value: "38", icon: "📚", color: COLORS.accent },
+          { label: "Active Product", value: stats.activeProducts.toString(), icon: "🛍️", color: COLORS.primary },
+          { label: "Completed Deal", value: stats.completedDeals.toString(), icon: "✅", color: COLORS.success },
+          { label: "Registered User", value: stats.registeredUsers > 1000 ? `${(stats.registeredUsers/1000).toFixed(1)}k` : stats.registeredUsers.toString(), icon: "👥", color: COLORS.info },
+          { label: "Library Item", value: stats.libraryItems.toString(), icon: "�", color: COLORS.accent },
         ].map((s, i) => (
           <div className="stat-card" key={i}>
-            <div className="stat-icon" style={{ background: s.color + "18" }}>{s.icon}</div>
+            <div className="stat-icon" style={{ background: s.color + "18" }}>
+              <span style={{ fontSize: 28, color: s.color }}>{s.icon}</span>
+            </div>
             <div className="stat-info">
               <h2>{s.value}</h2>
               <p>{s.label}</p>
@@ -39,7 +109,7 @@ export default function HomePage({ setActivePage }) {
           </div>
           <div className="section-body">
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {mockProducts.slice(0, 4).map(p => (
+              {products.map(p => (
                 <div key={p.id} style={{
                   display: "flex", alignItems: "center", gap: 12,
                   padding: "10px", borderRadius: 10,
@@ -68,7 +138,7 @@ export default function HomePage({ setActivePage }) {
               <span className="section-link" onClick={() => setActivePage("lostfound")}>عرض الكل ←</span>
             </div>
             <div className="section-body">
-              {mockLostFound.filter(l => !l.claimed).slice(0, 2).map(item => (
+              {lostItems.map(item => (
                 <div key={item.id} className="lost-item">
                   <span className="lost-emoji">{item.image}</span>
                   <div className="lost-info">
@@ -90,7 +160,7 @@ export default function HomePage({ setActivePage }) {
               <span className="section-link" onClick={() => setActivePage("messages")}>عرض الكل ←</span>
             </div>
             <div className="section-body">
-              {mockMessages.filter(m => m.unread).map(msg => (
+              {messages.filter(m => m.unread).map(msg => (
                 <div key={msg.id} className={`message-item ${msg.unread ? "unread" : ""}`}>
                   <div className="msg-avatar">{msg.from[0]}</div>
                   <div className="msg-info">
