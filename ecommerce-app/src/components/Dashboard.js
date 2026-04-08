@@ -509,51 +509,58 @@ function LostFoundPage({ onStartChat }) {
       ) : lostItems.length === 0 ? (
         <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>لا توجد مفقودات</div>
       ) : (
-        lostItems.map(item => (
-          <div key={item.id} className="lost-item" style={{ marginBottom: 12 }}>
-            {item.imageURL ? (
-              <img src={item.imageURL} alt={item.title}
-                style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
-            ) : (
-              <span className="lost-emoji" style={{ fontSize: 40 }}>{item.image}</span>
-            )}
-            <div className="lost-info">
-              <div className="lost-title" style={{ fontSize: 15 }}>{item.title}</div>
-              <div className="lost-desc">{item.description}</div>
-              <div className="lost-meta">
-                <span className="lost-tag">👤 {item.finder}</span>
-                <span className="lost-tag">📍 {item.location}</span>
-                <span className="lost-tag">🕐 {item.date}</span>
-                {item.claimed && <span className="lost-tag claimed-badge">✅ تم الاسترداد</span>}
+        <div className="products-grid">
+          {lostItems.map(item => (
+            <div key={item.id} className="product-card">
+              <div className="product-image">
+                {item.imageURL ? (
+                  <img src={item.imageURL} alt={item.title}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span>{item.image || "🔍"}</span>
+                )}
+                <span className={`product-badge ${!item.claimed ? "badge-active" : "badge-sold"}`}>
+                  {item.claimed ? "تم الاسترداد" : "مفقود"}
+                </span>
+              </div>
+              <div className="product-info">
+                <div className="product-title">{item.title}</div>
+                <div className="lost-desc" style={{ fontSize: 11, color: COLORS.muted, marginBottom: 8, height: 32, overflow: "hidden" }}>{item.description}</div>
+                <div className="lost-meta" style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  <span className="lost-tag" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 6, background: COLORS.light, color: COLORS.muted }}>👤 {item.finder}</span>
+                  <span className="lost-tag" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 6, background: COLORS.light, color: COLORS.muted }}>📍 {item.location}</span>
+                  <span className="lost-tag" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 6, background: COLORS.light, color: COLORS.muted }}>🕐 {item.date}</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button
+                    className={`borrow-btn ${!item.claimed ? "btn-primary" : "btn-disabled"}`}
+                    disabled={item.claimed}
+                    onClick={() => !item.claimed && handleClaim(item)}
+                    style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: !item.claimed ? "pointer" : "not-allowed", fontFamily: "'Cairo', sans-serif", fontSize: 12, fontWeight: 700 }}
+                  >
+                    {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
+                  </button>
+                  {item.finderId && auth.currentUser?.uid !== item.finderId && (
+                    <button
+                      onClick={() => onStartChat({
+                        id: item.id,
+                        title: item.title,
+                        sellerId: item.finderId,
+                        seller: item.finder
+                      })}
+                      style={{
+                        padding: "8px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                        background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
+                        cursor: "pointer", color: COLORS.primary, fontWeight: 600
+                      }}>
+                      💬 تواصل
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
-              <button
-                className={`borrow-btn ${!item.claimed ? "btn-primary" : "btn-disabled"}`}
-                disabled={item.claimed}
-                onClick={() => !item.claimed && handleClaim(item)}
-              >
-                {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
-              </button>
-              {item.finderId && auth.currentUser?.uid !== item.finderId && (
-                <button
-                  onClick={() => onStartChat({
-                    id: item.id,
-                    title: item.title,
-                    sellerId: item.finderId,
-                    seller: item.finder
-                  })}
-                  style={{
-                    padding: "6px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
-                    background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
-                    cursor: "pointer", color: COLORS.primary, fontWeight: 600
-                  }}>
-                  💬 تواصل
-                </button>
-              )}
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
     </>
   );
@@ -913,7 +920,7 @@ export default function Dashboard({ user }) {
                 onClick={() => setActivePage(item.id)}>
                 <span className="nav-icon">{item.icon}</span>
                 {sidebarOpen && <span className="nav-label">{item.label}</span>}
-                {globalUnreadCount > 0 && (
+                {item.id === "messages" && globalUnreadCount > 0 && (
                   <span className="badge">{globalUnreadCount}</span>
                 )}
               </div>
