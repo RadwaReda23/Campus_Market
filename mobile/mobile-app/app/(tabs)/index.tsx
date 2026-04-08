@@ -1,133 +1,224 @@
-import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
-import { signOut } from 'firebase/auth';
-import { auth } from '../firebase';
+import React, { useState, useEffect } from 'react';
+import { 
+  View, Text, TextInput, TouchableOpacity, Image, 
+  StyleSheet, ScrollView, Alert, ActivityIndicator, FlatList 
+} from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
-const COLORS = {
-  primary: '#1a3a2a',
-  accent: '#c8a84b',
-  light: '#f5f0e8',
-  muted: '#8a7d6b',
-  border: '#ddd3c0',
-  cardBg: '#fffdf8',
-  success: '#27ae60',
-  danger: '#c0392b',
-};
+const CLOUDINARY_CLOUD_NAME = "dgowyewii";
+const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
 
-const mockProducts = [
-  { id: 1, title: 'كتاب حساب التفاضل والتكامل', price: 45, seller: 'أحمد محمد', image: '📚', views: 34, time: 'منذ ساعتين' },
-  { id: 2, title: 'ميكروسكوب محمول', price: 320, seller: 'د. سارة علي', image: '🔬', views: 87, time: 'منذ يوم' },
-  { id: 3, title: 'كول روب معمل', price: 30, seller: 'فاطمة حسن', image: '🥼', views: 19, time: 'منذ 3 أيام' },
-  { id: 4, title: 'آلة حاسبة علمية', price: 150, seller: 'محمود إبراهيم', image: '🔢', views: 52, time: 'منذ 5 أيام' },
-];
+interface Product {
+  id: string;
+  title: string;
+  price: number;
+  category: string;
+  imageURL: string;
+  seller: string;
+}
 
-const mockLostFound = [
-  { id: 1, title: 'محفظة جلد بنية', description: 'وُجدت بالقرب من قاعة 101', location: 'مبنى A', date: 'اليوم', image: '👛' },
-  { id: 2, title: 'كارنيه جامعي', description: 'اسم الطالب غير واضح', location: 'عند البوابة', date: 'أمس', image: '🪪' },
-];
+export default function ProductsScreen() {
+  const [form, setForm] = useState({ title: '', price: '', category: 'كتب' });
+  const [image, setImage] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
 
-export default function HomeScreen() {
-  const router = useRouter();
+  useEffect(() => {
+    fetchProducts();
+  }, []);
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    router.replace('/Register');
+  const fetchProducts = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, "products"));
+      const list = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Product[];
+      setProducts(list);
+    } catch (err) {
+      console.log(err);
+    }
   };
 
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert("خطأ", "نحتاج إذن الوصول للصور");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      const picked = result.assets[0];
+      setImage(picked);
+    }
+  };
+
+  const uploadToCloudinary = async (pickedImage: any) => {
+    const data = new FormData();
+
+    data.append("file", {
+      uri: pickedImage.uri,
+      type: pickedImage.type || "image/jpeg",
+      name: pickedImage.uri.split("/").pop() || `upload.jpg`,
+    } as any);
+
+    data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+      method: 'POST',
+      body: data,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    const result = await res.json();
+    return result.secure_url;
+  };
+
+  const handleAddProduct = async () => {
+    if (!form.title || !form.price || !image) {
+      Alert.alert("تنبيه", "الرجاء ملء كل الحقول واختيار صورة");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const uploadedUrl = await uploadToCloudinary(image);
+
+      await addDoc(collection(db, "products"), {
+        title: form.title,
+        price: Number(form.price),
+        category: form.category,
+        imageURL: uploadedUrl,
+        seller: auth.currentUser?.displayName || auth.currentUser?.email,
+        sellerId: auth.currentUser?.uid,
+        createdAt: serverTimestamp(),
+        status: "active"
+      });
+
+      Alert.alert("تم ✅", "تم إضافة المنتج بنجاح");
+      setForm({ title: '', price: '', category: 'كتب' });
+      setImage(null);
+      fetchProducts();
+    } catch (err) {
+      console.log(err);
+      Alert.alert("خطأ", "فشل الرفع، تأكد من إعدادات Cloudinary");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderProduct = ({ item }: { item: Product }) => (
+    <View style={styles.card}>
+      <Image source={{ uri: item.imageURL }} style={styles.cardImage} />
+      <Text style={styles.cardTitle}>{item.title}</Text>
+      <Text style={styles.cardPrice}>{item.price} ج</Text>
+      <Text style={styles.cardSeller}>👤 {item.seller}</Text>
+    </View>
+  );
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>🔬 سوق كلية العلوم</Text>
-          <Text style={styles.headerSub}>جامعة القاهرة</Text>
-        </View>
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-          <Text style={styles.logoutText}>خروج 🚪</Text>
-        </TouchableOpacity>
-      </View>
+    <ScrollView style={styles.container}>
+      <Text style={styles.label}>صورة المنتج</Text>
+      <TouchableOpacity style={styles.imageBox} onPress={pickImage}>
+        {image ? (
+          <Image source={{ uri: image.uri }} style={styles.image} />
+        ) : (
+          <Text style={{ color: '#888' }}>📷 اضغط لاختيار صورة</Text>
+        )}
+      </TouchableOpacity>
 
-      {/* Stats */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsRow}>
-        {[
-          { label: 'منتج نشط', value: '142', icon: '🛒' },
-          { label: 'صفقة مكتملة', value: '89', icon: '✅' },
-          { label: 'مستخدم', value: '1.2k', icon: '👥' },
-          { label: 'في المكتبة', value: '38', icon: '📚' },
-        ].map((s, i) => (
-          <View key={i} style={styles.statCard}>
-            <Text style={styles.statIcon}>{s.icon}</Text>
-            <Text style={styles.statValue}>{s.value}</Text>
-            <Text style={styles.statLabel}>{s.label}</Text>
-          </View>
-        ))}
-      </ScrollView>
+      <TextInput
+        placeholder="اسم المنتج"
+        style={styles.input}
+        value={form.title}
+        onChangeText={(t) => setForm({ ...form, title: t })}
+      />
 
-      {/* Alert */}
-      <View style={styles.alertStrip}>
-        <Text style={styles.alertText}>📢 تم إضافة 5 منتجات جديدة اليوم!</Text>
-      </View>
+      <TextInput
+        placeholder="السعر"
+        style={styles.input}
+        keyboardType="numeric"
+        value={form.price}
+        onChangeText={(p) => setForm({ ...form, price: p })}
+      />
 
-      {/* Recent Products */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🛒 أحدث المنتجات</Text>
-        {mockProducts.map(p => (
-          <View key={p.id} style={styles.productRow}>
-            <Text style={styles.productEmoji}>{p.image}</Text>
-            <View style={styles.productInfo}>
-              <Text style={styles.productTitle}>{p.title}</Text>
-              <Text style={styles.productMeta}>{p.seller} · {p.time}</Text>
-            </View>
-            <View>
-              <Text style={styles.productPrice}>{p.price} ج</Text>
-              <Text style={styles.productViews}>👁 {p.views}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
+      <TouchableOpacity
+        style={[styles.btn, { opacity: loading ? 0.6 : 1 }]}
+        onPress={handleAddProduct}
+        disabled={loading}
+      >
+        {loading ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>إضافة المنتج</Text>}
+      </TouchableOpacity>
 
-      {/* Lost & Found */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🔍 المفقودات الأخيرة</Text>
-        {mockLostFound.map(item => (
-          <View key={item.id} style={styles.lostRow}>
-            <Text style={styles.lostEmoji}>{item.image}</Text>
-            <View style={styles.productInfo}>
-              <Text style={styles.productTitle}>{item.title}</Text>
-              <Text style={styles.productMeta}>{item.description}</Text>
-              <Text style={styles.productMeta}>📍 {item.location} · {item.date}</Text>
-            </View>
-          </View>
-        ))}
-      </View>
+      <Text style={[styles.label, { marginTop: 30 }]}>المنتجات الحالية</Text>
+      <FlatList
+        data={products}
+        keyExtractor={item => item.id}
+        renderItem={renderProduct}
+        horizontal={false}
+        numColumns={2}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f0e8' },
-  header: { backgroundColor: '#1a3a2a', padding: 20, paddingTop: 50, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  headerSub: { color: '#c8a84b', fontSize: 12, marginTop: 2 },
-  logoutBtn: { backgroundColor: '#c0392b', padding: 8, borderRadius: 8 },
-  logoutText: { color: 'white', fontSize: 12, fontWeight: 'bold' },
-  statsRow: { padding: 16, paddingBottom: 0 },
-  statCard: { backgroundColor: 'white', borderRadius: 12, padding: 14, marginLeft: 10, alignItems: 'center', minWidth: 80, borderWidth: 1, borderColor: '#ddd3c0' },
-  statIcon: { fontSize: 22 },
-  statValue: { fontSize: 18, fontWeight: '900', color: '#1a3a2a', marginTop: 4 },
-  statLabel: { fontSize: 10, color: '#8a7d6b', marginTop: 2, textAlign: 'center' },
-  alertStrip: { margin: 16, backgroundColor: '#fffbf0', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#c8a84b44' },
-  alertText: { color: '#1a3a2a', fontSize: 13 },
-  section: { margin: 16, backgroundColor: 'white', borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#ddd3c0' },
-  sectionTitle: { fontSize: 15, fontWeight: 'bold', color: '#1a3a2a', padding: 14, borderBottomWidth: 1, borderBottomColor: '#ddd3c0' },
-  productRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#f0ebe0', gap: 10 },
-  productEmoji: { fontSize: 28 },
-  productInfo: { flex: 1 },
-  productTitle: { fontSize: 13, fontWeight: '700', color: '#1a3a2a' },
-  productMeta: { fontSize: 11, color: '#8a7d6b', marginTop: 2 },
-  productPrice: { fontSize: 15, fontWeight: '900', color: '#c8a84b', textAlign: 'right' },
-  productViews: { fontSize: 10, color: '#8a7d6b', textAlign: 'right' },
-  lostRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#f0ebe0', gap: 10 },
-  lostEmoji: { fontSize: 32 },
+  container: { flex: 1, padding: 20, backgroundColor: 'white' },
+  label: { fontSize: 16, fontWeight: 'bold', marginBottom: 10, marginTop: 20 },
+  imageBox: {
+    width: '100%',
+    height: 200,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderStyle: 'dashed',
+    overflow: 'hidden'
+  },
+  image: { width: '100%', height: '100%' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 15,
+    textAlign: 'right'
+  },
+  btn: {
+    backgroundColor: '#1a3a2a',
+    padding: 18,
+    borderRadius: 10,
+    marginTop: 30,
+    alignItems: 'center'
+  },
+  btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+  card: {
+    width: '47%',
+    backgroundColor: '#fff',
+    margin: 5,
+    padding: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd'
+  },
+  cardImage: { width: '100%', height: 120, borderRadius: 10 },
+  cardTitle: { fontWeight: 'bold', marginTop: 8 },
+  cardPrice: { color: '#c8a84b', marginTop: 4 },
+  cardSeller: { fontSize: 10, marginTop: 2 }
 });
