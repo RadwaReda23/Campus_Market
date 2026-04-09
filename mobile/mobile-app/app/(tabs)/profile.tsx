@@ -2,30 +2,49 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { signOut, updateProfile, onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase';
-
-const mockProducts = [
-  { id: 1, title: 'كتاب حساب التفاضل والتكامل', price: 45, image: '📚', views: 34 },
-  { id: 2, title: 'ميكروسكوب محمول', price: 320, image: '🔬', views: 87 },
-  { id: 3, title: 'كول روب معمل', price: 30, image: '🥼', views: 19 },
-];
+import { auth, db } from '../firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 export default function ProfileScreen() {
   const router = useRouter();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [products, setProducts] = useState<any[]>([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setName(user.displayName || '');
         setEmail(user.email || '');
+
+        fetchMyProducts(user.uid);
       }
     });
 
     return unsubscribe;
   }, []);
+
+  // 📦 جلب منتجات المستخدم
+  const fetchMyProducts = async (uid: string) => {
+    try {
+      const q = query(
+        collection(db, "products"),
+        where("sellerId", "==", uid)
+      );
+
+      const snapshot = await getDocs(q);
+
+      const list = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      setProducts(list);
+    } catch (err) {
+      console.log("Error loading my products:", err);
+    }
+  };
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -61,16 +80,25 @@ export default function ProfileScreen() {
       {/* Products */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🛒 منتجاتي</Text>
-        {mockProducts.map(p => (
-          <View key={p.id} style={styles.productRow}>
-            <Text style={styles.productEmoji}>{p.image}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.productTitle}>{p.title}</Text>
-              <Text style={styles.productMeta}>👁 {p.views} مشاهدة</Text>
+
+        {products.length === 0 ? (
+          <Text style={{ padding: 12, color: '#888' }}>
+            لا يوجد منتجات حتى الآن
+          </Text>
+        ) : (
+          products.map(p => (
+            <View key={p.id} style={styles.productRow}>
+              <Text style={styles.productEmoji}>📦</Text>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.productTitle}>{p.title}</Text>
+                <Text style={styles.productMeta}>👁 {p.views || 0} مشاهدة</Text>
+              </View>
+
+              <Text style={styles.productPrice}>{p.price} ج</Text>
             </View>
-            <Text style={styles.productPrice}>{p.price} ج</Text>
-          </View>
-        ))}
+          ))
+        )}
       </View>
 
       {/* Settings */}
@@ -91,7 +119,6 @@ export default function ProfileScreen() {
           <Text style={styles.label}>الإيميل</Text>
           <TextInput
             style={styles.input}
-            placeholder="أدخل الإيميل"
             value={email}
             editable={false}
           />
@@ -111,6 +138,7 @@ export default function ProfileScreen() {
   );
 }
 
+// 🎨 Styles
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f0e8' },
 
@@ -158,10 +186,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0ebe0'
+    borderBottomColor: '#f0ebe0',
+    alignItems: 'center'
   },
 
-  productEmoji: { fontSize: 24 },
+  productEmoji: { fontSize: 24, marginRight: 10 },
   productTitle: { fontSize: 13, fontWeight: '700' },
   productMeta: { fontSize: 11, color: '#8a7d6b' },
   productPrice: { fontWeight: 'bold', color: '#c8a84b' },
