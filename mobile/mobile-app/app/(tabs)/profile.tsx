@@ -1,199 +1,239 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View, Text, ScrollView, TextInput,
+  TouchableOpacity, StyleSheet, Image
+} from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { signOut, updateProfile, onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
-const mockProducts = [
-  { id: 1, title: 'كتاب حساب التفاضل والتكامل', price: 45, image: '📚', views: 34 },
-  { id: 2, title: 'ميكروسكوب محمول', price: 320, image: '🔬', views: 87 },
-  { id: 3, title: 'كول روب معمل', price: 30, image: '🥼', views: 19 },
-];
+interface LibraryItem {
+  id: string;
+  title: string;
+  imageURL: string;
+  available?: boolean;
+  borrower?: string | null;
+  borrowStart?: string | null;
+  borrowEnd?: string | null;
+  owner?: string | null;
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+  const [lostItems, setLostItems] = useState<LibraryItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         setName(user.displayName || '');
         setEmail(user.email || '');
+        setPhoto(user.photoURL || '');
+        fetchMyProducts(user.uid);
+        fetchLibraryItems(user.email);
+        fetchLostItems(user.email);
       }
     });
-
     return unsubscribe;
   }, []);
 
+  // جلب منتجات المستخدم
+  const fetchMyProducts = async (uid: string) => {
+    try {
+      const q = query(collection(db, "products"), where("sellerId", "==", uid));
+      const snapshot = await getDocs(q);
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setProducts(list);
+    } catch (err) {
+      console.log("Error loading products:", err);
+    }
+  };
+
+  // جلب مكتبة المستخدم
+  const fetchLibraryItems = async (userEmail: string | null) => {
+    if (!userEmail) return;
+    try {
+      const q = query(collection(db, "library"));
+      const snapshot = await getDocs(q);
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LibraryItem[];
+      setLibraryItems(list.filter(item => item.owner && item.owner === userEmail));
+    } catch (err) {
+      console.log("Error loading library:", err);
+    }
+  };
+
+  // جلب المفقودات
+  const fetchLostItems = async (userEmail: string | null) => {
+    if (!userEmail) return;
+    try {
+      const q = query(collection(db, "lost"));
+      const snapshot = await getDocs(q);
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LibraryItem[];
+      setLostItems(list.filter(item => item.owner && item.owner === userEmail));
+    } catch (err) {
+      console.log("Error loading lost items:", err);
+    }
+  };
+
+  // اختيار صورة
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { alert("نحتاج إذن الوصول للصور"); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (!result.canceled) setPhoto(result.assets[0].uri);
+  };
+
+  // رفع الصورة على Cloudinary
+  const uploadToCloudinary = async (pickedUri: string) => {
+    const data = new FormData();
+    const response = await fetch(pickedUri);
+    const blob = await response.blob();
+    data.append("file", blob);
+    data.append("upload_preset", "unsigned_preset");
+    const res = await fetch(
+      "https://api.cloudinary.com/v1_1/dz4nwc1yu/image/upload",
+      { method: "POST", body: data }
+    );
+    const result = await res.json();
+    if (!res.ok) throw new Error(result.error?.message || "Upload failed");
+    return result.secure_url;
+  };
+
+  // حفظ التعديلات
+  const handleUpdate = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    setLoading(true);
+    try {
+      let photoURL = user.photoURL;
+      if (photo && photo !== user.photoURL) {
+        photoURL = await uploadToCloudinary(photo);
+      }
+      await updateProfile(user, { displayName: name, photoURL });
+      alert("تم حفظ التعديلات بنجاح ✅");
+    } catch (err) {
+      console.log(err);
+      alert("حدث خطأ أثناء الحفظ");
+    } finally { setLoading(false); }
+  };
+
+  // تسجيل الخروج
   const handleLogout = async () => {
     await signOut(auth);
     router.replace('/Register');
   };
 
-  const handleUpdate = async () => {
-    const user = auth.currentUser;
-    if (user) {
-      await updateProfile(user, {
-        displayName: name,
-      });
-      alert("Profile updated ✅");
-    }
-  };
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
-      
-      {/* Header */}
+      {/* الهيدر */}
       <View style={styles.profileHeader}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {name ? name.charAt(0).toUpperCase() : "?"}
-          </Text>
+        <View style={{ alignItems: 'center' }}>
+          <TouchableOpacity onPress={pickImage}>
+            <View style={styles.avatar}>
+              {photo ? <Image source={{ uri: photo }} style={styles.avatarImg} /> :
+                <Text style={styles.avatarText}>{name ? name.charAt(0).toUpperCase() : "?"}</Text>}
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={pickImage} style={styles.smallBtn}>
+            <Text style={styles.smallBtnText}>📸 تغيير صورة البروفايل</Text>
+          </TouchableOpacity>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.profileName}>{name || "No Name"}</Text>
-          <Text style={styles.profileRole}>{email || ""}</Text>
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={styles.profileName}>{name || "لا يوجد اسم"}</Text>
+          <Text style={styles.profileRole}>{email || "لا يوجد بريد إلكتروني"}</Text>
         </View>
       </View>
 
-      {/* Products */}
+      {/* المنتجات */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🛒 منتجاتي</Text>
-        {mockProducts.map(p => (
-          <View key={p.id} style={styles.productRow}>
-            <Text style={styles.productEmoji}>{p.image}</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.productTitle}>{p.title}</Text>
-              <Text style={styles.productMeta}>👁 {p.views} مشاهدة</Text>
+        {products.length === 0 ? <Text style={{ padding: 12, color: '#888' }}>لا توجد منتجات حتى الآن</Text> :
+          products.map(p => (
+            <View key={p.id} style={styles.productRow}>
+              <Text style={styles.productEmoji}>📦</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.productTitle}>{p.title}</Text>
+                <Text style={styles.productMeta}>👁 {p.views || 0} مشاهدة</Text>
+              </View>
+              <Text style={styles.productPrice}>{p.price} جنيه</Text>
             </View>
-            <Text style={styles.productPrice}>{p.price} ج</Text>
-          </View>
-        ))}
+          ))}
       </View>
 
-      {/* Settings */}
+      {/* مكتبة المستخدم */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>📚 مكتبتي</Text>
+        {libraryItems.length === 0 ? <Text style={{ padding: 12, color: '#888' }}>لا توجد عناصر</Text> :
+          libraryItems.map(item => (
+            <View key={item.id} style={styles.productRow}>
+              {item.imageURL && <Image source={{ uri: item.imageURL }} style={{ width: 50, height: 50, borderRadius: 10, marginRight: 10 }} />}
+              <Text style={styles.productTitle}>{item.title}</Text>
+            </View>
+          ))}
+      </View>
+
+      {/* المفقودات */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🔍 المفقودات</Text>
+        {lostItems.length === 0 ? <Text style={{ padding: 12, color: '#888' }}>لا توجد عناصر</Text> :
+          lostItems.map(item => (
+            <View key={item.id} style={styles.productRow}>
+              {item.imageURL && <Image source={{ uri: item.imageURL }} style={{ width: 50, height: 50, borderRadius: 10, marginRight: 10 }} />}
+              <Text style={styles.productTitle}>{item.title}</Text>
+            </View>
+          ))}
+      </View>
+
+      {/* إعدادات الحساب */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>⚙️ إعدادات الحساب</Text>
-
-        <View style={styles.uiBox}>
-          <Text style={styles.label}>الاسم</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="أدخل اسمك"
-            value={name}
-            onChangeText={setName}
-          />
-        </View>
-
-        <View style={styles.uiBox}>
-          <Text style={styles.label}>الإيميل</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="أدخل الإيميل"
-            value={email}
-            editable={false}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate}>
-          <Text style={styles.updateText}>Update Profile</Text>
+        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="الاسم" />
+        <TextInput style={styles.input} value={email} editable={false} />
+        <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate} disabled={loading}>
+          <Text style={styles.updateText}>{loading ? "⏳ جاري الحفظ..." : "💾 حفظ التعديلات"}</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Logout */}
+      {/* تسجيل الخروج */}
       <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
         <Text style={styles.logoutText}>🚪 تسجيل الخروج</Text>
       </TouchableOpacity>
-
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f0e8' },
-
-  profileHeader: {
-    backgroundColor: '#1a3a2a',
-    padding: 24,
-    paddingTop: 50,
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'center'
-  },
-
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#c8a84b',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-
+  profileHeader: { backgroundColor: '#1a3a2a', padding: 24, paddingTop: 50, flexDirection: 'row', alignItems: 'center' },
+  avatar: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#c8a84b', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  avatarImg: { width: '100%', height: '100%' },
   avatarText: { color: '#1a3a2a', fontSize: 26, fontWeight: '900' },
   profileName: { color: 'white', fontSize: 18, fontWeight: 'bold' },
   profileRole: { color: '#c8a84b', fontSize: 12 },
-
-  section: {
-    margin: 16,
-    backgroundColor: 'white',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#ddd3c0',
-    overflow: 'hidden'
-  },
-
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1a3a2a',
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd3c0'
-  },
-
-  productRow: {
-    flexDirection: 'row',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0ebe0'
-  },
-
-  productEmoji: { fontSize: 24 },
-  productTitle: { fontSize: 13, fontWeight: '700' },
-  productMeta: { fontSize: 11, color: '#8a7d6b' },
+  section: { margin: 16, backgroundColor: 'white', borderRadius: 14, borderWidth: 1, borderColor: '#ddd3c0' },
+  sectionTitle: { padding: 14, fontWeight: 'bold', borderBottomWidth: 1, borderBottomColor: '#eee' },
+  productRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  productEmoji: { fontSize: 22, marginRight: 10 },
+  productTitle: { fontWeight: '700' },
+  productMeta: { fontSize: 11, color: '#888' },
   productPrice: { fontWeight: 'bold', color: '#c8a84b' },
-
-  uiBox: { padding: 12 },
-  label: { fontSize: 12, color: '#8a7d6b', marginBottom: 5 },
-
-  input: {
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    backgroundColor: '#fafafa'
-  },
-
-  updateBtn: {
-    backgroundColor: '#1a3a2a',
-    padding: 12,
-    margin: 12,
-    borderRadius: 10,
-    alignItems: 'center'
-  },
-
+  input: { margin: 12, padding: 10, borderWidth: 1, borderColor: '#ddd', borderRadius: 10 },
+  updateBtn: { backgroundColor: '#1a3a2a', margin: 12, padding: 12, borderRadius: 10, alignItems: 'center' },
   updateText: { color: 'white', fontWeight: 'bold' },
-
-  logoutBtn: {
-    margin: 16,
-    backgroundColor: '#c0392b',
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center'
-  },
-
-  logoutText: { color: 'white', fontWeight: 'bold' }
+  logoutBtn: { margin: 16, backgroundColor: '#c0392b', padding: 14, borderRadius: 12, alignItems: 'center' },
+  logoutText: { color: 'white', fontWeight: 'bold' },
+  smallBtn: { marginTop: 8, backgroundColor: '#c8a84b', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20 },
+  smallBtnText: { fontSize: 12, fontWeight: 'bold', color: '#1a3a2a' }
 });

@@ -1,97 +1,254 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+// LibraryScreen.tsx
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, TextInput, Alert, ActivityIndicator, FlatList, Modal } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, onSnapshot, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
-const mockLibrary = [
-  { id: 1, title: 'بالطو معمل مقاس L', available: true, borrower: null, image: '🥼' },
-  { id: 2, title: 'بالطو معمل مقاس M', available: false, borrower: 'علي حسن', image: '🥼' },
-  { id: 3, title: 'نظارة واقية', available: true, borrower: null, image: '🥽' },
-  { id: 4, title: 'قفازات معمل', available: true, borrower: null, image: '🧤' },
-  { id: 5, title: 'بالطو معمل مقاس S', available: false, borrower: 'منى إبراهيم', image: '🥼' },
-];
+const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
+const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
 
-const mockLostFound = [
-  { id: 1, title: 'محفظة جلد بنية', description: 'وُجدت بالقرب من قاعة 101', finder: 'طالب مجهول', location: 'مبنى A', date: 'اليوم', image: '👛', claimed: false },
-  { id: 2, title: 'كارنيه جامعي', description: 'اسم الطالب غير واضح', finder: 'حارس الأمن', location: 'عند البوابة', date: 'أمس', image: '🪪', claimed: false },
-  { id: 3, title: 'مفاتيح خضراء', description: 'مفتاحين على حلقة خضراء', finder: 'دكتورة ريم', location: 'معمل 3', date: 'منذ يومين', image: '🔑', claimed: true },
-];
+interface LibraryItem {
+  id: string;
+  title: string;
+  imageURL: string;
+  available?: boolean;
+  borrower?: string | null;
+  borrowStart?: string | null;
+  borrowEnd?: string | null;
+  owner?: string | null;
+}
 
 export default function LibraryScreen() {
-  const [activeTab, setActiveTab] = useState('borrow');
+  const [activeTab, setActiveTab] = useState<'borrow' | 'lost'>('borrow');
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+  const [lostItems, setLostItems] = useState<LibraryItem[]>([]);
+  const [image, setImage] = useState<{ uri: string } | null>(null);
+  const [title, setTitle] = useState('');
+  const [borrowStart, setBorrowStart] = useState('');
+  const [borrowEnd, setBorrowEnd] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Chat State
+  const [chatVisible, setChatVisible] = useState(false);
+  const [chatItem, setChatItem] = useState<LibraryItem | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [text, setText] = useState('');
+
+  useEffect(() => { fetchItems(); }, []);
+
+  const fetchItems = async () => {
+    try {
+      const q1 = query(collection(db, "library"), orderBy("createdAt", "desc"));
+      const snapshot1 = await getDocs(q1);
+      const libList = snapshot1.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LibraryItem[];
+      setLibraryItems(libList.filter(i => i.available !== undefined));
+
+      const q2 = query(collection(db, "lost"), orderBy("createdAt", "desc"));
+      const snapshot2 = await getDocs(q2);
+      const lostList = snapshot2.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LibraryItem[];
+      setLostItems(lostList);
+    } catch {
+      Alert.alert("خطأ", "فشل تحميل البيانات");
+    }
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert("خطأ", "محتاجين إذن الصور"); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
+    if (!result.canceled) setImage({ uri: result.assets[0].uri });
+  };
+
+  const uploadToCloudinary = async () => {
+    if (!image) return;
+    const data = new FormData();
+    const response = await fetch(image.uri);
+    const blob = await response.blob();
+    data.append("file", blob);
+    data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    data.append("folder", activeTab);
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, { method: "POST", body: data });
+    const result = await res.json();
+    if (!res.ok) throw new Error("Upload failed");
+    return result.secure_url;
+  };
+
+  const handleAddItem = async () => {
+    if (!auth.currentUser) { Alert.alert("خطأ", "سجلي دخول الأول"); return; }
+    if (!title || !image) { Alert.alert("تنبيه", "اكتبي اسم الحاجة واختاري صورة"); return; }
+    setLoading(true);
+    try {
+      const imageURL = await uploadToCloudinary();
+      const colName = activeTab === 'borrow' ? "library" : "lost";
+      const docData = activeTab === 'borrow'
+        ? { title, imageURL, available: true, borrower: null, createdAt: serverTimestamp(), owner: auth.currentUser.email, borrowStart: borrowStart || null, borrowEnd: borrowEnd || null }
+        : { title, imageURL, createdAt: serverTimestamp(), owner: auth.currentUser.email };
+      await addDoc(collection(db, colName), docData);
+      Alert.alert("تم ✅", "اتضاف بنجاح");
+      setTitle(''); setImage(null); setBorrowStart(''); setBorrowEnd('');
+      fetchItems();
+    } catch { Alert.alert("خطأ", "حصل مشكلة"); }
+    setLoading(false);
+  };
+
+  // Chat Functions
+  const openChat = (item: LibraryItem, collectionName: string) => {
+    setChatItem(item);
+    setChatVisible(true);
+    const q = query(collection(db, collectionName, item.id, 'messages'), orderBy('createdAt', 'asc'));
+    onSnapshot(q, snapshot => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+      setMessages(msgs);
+    });
+  };
+
+  const sendMessage = async () => {
+    if (!text.trim() || !chatItem) return;
+    const colName = activeTab === 'borrow' ? 'library' : 'lost';
+    await addDoc(collection(db, colName, chatItem.id, 'messages'), {
+      sender: auth.currentUser?.email,
+      text: text.trim(),
+      createdAt: serverTimestamp()
+    });
+    setText('');
+  };
+
+  const filteredLibrary = libraryItems.filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredLost = lostItems.filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  const renderItems = (items: LibraryItem[], isBorrow: boolean) => (
+    <View style={styles.contentRow}>
+      <View style={styles.itemsList}>
+        {items.map(item => {
+          const isOwner = item.owner === auth.currentUser?.email;
+          return (
+            <View key={item.id} style={styles.itemRow}>
+              {item.imageURL && <Image source={{ uri: item.imageURL }} style={styles.itemImage} />}
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemTitle}>{item.title}</Text>
+                {isBorrow && <Text style={[styles.itemStatus, { color: item.available ? '#27ae60' : '#c0392b' }]}>{item.available ? '✅ متاح' : '❌ مستعار'}</Text>}
+                {isBorrow && <Text style={styles.dateText}>{item.borrowStart && item.borrowEnd ? `📅 ${item.borrowStart} → ${item.borrowEnd}` : ''}</Text>}
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 5 }}>
+                {/* زر تعديل الحالة للمالك فقط */}
+                {isBorrow && isOwner && (
+                  <TouchableOpacity 
+                    style={[styles.borrowBtn, { backgroundColor: item.available ? '#1a3a2a' : '#c0392b' }]}
+                    onPress={async () => {
+                      try {
+                        await updateDoc(doc(db, "library", item.id), { available: !item.available });
+                        setLibraryItems(prev => prev.map(i => i.id === item.id ? {...i, available: !i.available} : i));
+                      } catch { Alert.alert("خطأ", "فشل تحديث الحالة"); }
+                    }}
+                  >
+                    <Text style={styles.borrowBtnText}>{item.available ? 'استعر' : 'غير متاح'}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* زر الحذف للمالك فقط */}
+                {isOwner && (
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={async () => {
+                      try {
+                        const colName = activeTab === 'borrow' ? "library" : "lost";
+                        await deleteDoc(doc(db, colName, item.id));
+                        if (activeTab === 'borrow') {
+                          setLibraryItems(prev => prev.filter(i => i.id !== item.id));
+                        } else {
+                          setLostItems(prev => prev.filter(i => i.id !== item.id));
+                        }
+                        Alert.alert("تم الحذف ✅", "تم حذف المنتج بنجاح");
+                      } catch (err) {
+                        console.log("Delete error:", err);
+                        Alert.alert("خطأ ❌", "فشل الحذف");
+                      }
+                    }}
+                  >
+                    <Text style={styles.deleteBtnText}>🗑️</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* زر الدردشة لكل شخص */}
+                <TouchableOpacity 
+                  style={styles.chatBtn}
+                  onPress={() => openChat(item, activeTab === 'borrow' ? 'library' : 'lost')}
+                >
+                  <Text style={styles.chatBtnText}>💬</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* إضافة عناصر جديدة */}
+      <View style={styles.addBox}>
+        <TextInput placeholder="اسم الحاجة" style={styles.input} value={title} onChangeText={setTitle} />
+        <TextInput placeholder="تاريخ بداية الاستعارة (YYYY-MM-DD)" style={styles.input} value={borrowStart} onChangeText={setBorrowStart} />
+        <TextInput placeholder="تاريخ نهاية الاستعارة (YYYY-MM-DD)" style={styles.input} value={borrowEnd} onChangeText={setBorrowEnd} />
+        <TouchableOpacity style={styles.imageBox} onPress={pickImage}>
+          {image ? <Image source={{ uri: image.uri }} style={styles.image} /> : <Text>📷 اختاري صورة</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.btn} onPress={handleAddItem}>
+          {loading ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>➕ إضافة</Text>}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>📚 المكتبة</Text>
-      </View>
+    <View style={styles.container}>
+      <View style={styles.header}><Text style={styles.headerTitle}>📚 المكتبة</Text></View>
 
-      <View style={styles.alertStrip}>
-        <Text style={styles.alertText}>📚 المكتبة للاستعارة المجانية — أعد العناصر بعد الاستخدام</Text>
-      </View>
-
-      {/* Tabs */}
       <View style={styles.tabRow}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'borrow' && styles.tabActive]}
-          onPress={() => setActiveTab('borrow')}
-        >
+        <TouchableOpacity style={[styles.tab, activeTab === 'borrow' && styles.tabActive]} onPress={() => { setActiveTab('borrow'); setSearchQuery(''); }}>
           <Text style={[styles.tabText, activeTab === 'borrow' && styles.tabTextActive]}>🥼 الاستعارة</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'lost' && styles.tabActive]}
-          onPress={() => setActiveTab('lost')}
-        >
+        <TouchableOpacity style={[styles.tab, activeTab === 'lost' && styles.tabActive]} onPress={() => { setActiveTab('lost'); setSearchQuery(''); }}>
           <Text style={[styles.tabText, activeTab === 'lost' && styles.tabTextActive]}>🔍 المفقودات</Text>
         </TouchableOpacity>
       </View>
 
-      {activeTab === 'borrow' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            🥼 عناصر الاستعارة — {mockLibrary.filter(l => l.available).length} متاح
-          </Text>
-          {mockLibrary.map(item => (
-            <View key={item.id} style={styles.itemRow}>
-              <Text style={styles.itemEmoji}>{item.image}</Text>
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemTitle}>{item.title}</Text>
-                <Text style={[styles.itemStatus, { color: item.available ? '#27ae60' : '#c0392b' }]}>
-                  {item.available ? '✅ متاح للاستعارة' : `❌ مستعار: ${item.borrower}`}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.borrowBtn, !item.available && styles.borrowBtnDisabled]}
-                disabled={!item.available}
-              >
-                <Text style={styles.borrowBtnText}>{item.available ? 'استعر' : 'غير متاح'}</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-      )}
+      <TextInput
+        placeholder="ابحث باسم الحاجة"
+        style={styles.searchInput}
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
 
-      {activeTab === 'lost' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔍 المفقودات في الكلية</Text>
-          {mockLostFound.map(item => (
-            <View key={item.id} style={styles.itemRow}>
-              <Text style={styles.itemEmoji}>{item.image}</Text>
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemTitle}>{item.title}</Text>
-                <Text style={styles.itemMeta}>{item.description}</Text>
-                <Text style={styles.itemMeta}>📍 {item.location} · {item.date}</Text>
-                {item.claimed && <Text style={styles.claimedBadge}>✅ تم الاسترداد</Text>}
+      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
+        {activeTab === 'borrow' ? renderItems(filteredLibrary, true) : renderItems(filteredLost, false)}
+      </ScrollView>
+
+      {/* Chat Modal */}
+      <Modal visible={chatVisible} animationType="slide" onRequestClose={() => setChatVisible(false)}>
+        <View style={{ flex:1, backgroundColor:'#f5f0e8', padding:10 }}>
+          <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }}>
+            <Text style={{ fontSize:16, fontWeight:'bold' }}>{chatItem?.title}</Text>
+            <TouchableOpacity onPress={() => setChatVisible(false)}><Text style={{fontSize:18}}>❌</Text></TouchableOpacity>
+          </View>
+          <FlatList
+            data={messages}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <View style={[styles.messageBox, item.sender === auth.currentUser?.email ? styles.myMsg : styles.otherMsg]}>
+                <Text style={styles.messageText}>{item.text}</Text>
+                <Text style={styles.sender}>{item.sender}</Text>
               </View>
-              <TouchableOpacity
-                style={[styles.borrowBtn, item.claimed && styles.borrowBtnDisabled]}
-                disabled={item.claimed}
-              >
-                <Text style={styles.borrowBtnText}>{item.claimed ? 'مُسترد' : 'ملكي 🙋'}</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
+            )}
+            style={{ flex:1, marginTop:10 }}
+          />
+          <View style={styles.inputRow}>
+            <TextInput value={text} onChangeText={setText} style={styles.input} placeholder="اكتب رسالة..." />
+            <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}><Text style={{color:'white'}}>إرسال</Text></TouchableOpacity>
+          </View>
         </View>
-      )}
-    </ScrollView>
+      </Modal>
+    </View>
   );
 }
 
@@ -99,23 +256,37 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f0e8' },
   header: { backgroundColor: '#1a3a2a', padding: 20, paddingTop: 50 },
   headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  alertStrip: { margin: 16, backgroundColor: '#f0fdf4', borderRadius: 10, padding: 12, borderWidth: 1, borderColor: '#bbf7d0' },
-  alertText: { color: '#1a3a2a', fontSize: 13 },
   tabRow: { flexDirection: 'row', margin: 16, gap: 10 },
   tab: { flex: 1, padding: 10, borderRadius: 20, borderWidth: 2, borderColor: '#ddd3c0', backgroundColor: 'white', alignItems: 'center' },
   tabActive: { backgroundColor: '#1a3a2a', borderColor: '#1a3a2a' },
   tabText: { fontSize: 13, fontWeight: '600', color: '#8a7d6b' },
   tabTextActive: { color: 'white' },
-  section: { margin: 16, backgroundColor: 'white', borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: '#ddd3c0' },
-  sectionTitle: { fontSize: 14, fontWeight: 'bold', color: '#1a3a2a', padding: 14, borderBottomWidth: 1, borderBottomColor: '#ddd3c0' },
+  searchInput: { borderWidth: 3, borderColor: '#1a3a2a', margin: 16, marginBottom: 10, padding: 10, borderRadius: 10, fontSize: 14, textAlign: 'right', backgroundColor: '#fff' },
+  contentRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
+  itemsList: { flex: 3 },
+  addBox: { flex: 1, backgroundColor: '#fff', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', justifyContent: 'flex-start', alignItems: 'center' },
+  input: { borderWidth: 1, borderColor: '#ddd', marginBottom: 10, padding: 8, borderRadius: 8, textAlign: 'right', width: '100%' },
+  imageBox: { height: 100, width: '100%', borderRadius: 10, borderWidth: 1, borderColor: '#ddd', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  image: { width: '100%', height: '100%' },
+  btn: { backgroundColor: '#1a3a2a', padding: 10, borderRadius: 8, alignItems: 'center', width: '100%' },
+  btnText: { color: 'white' },
   itemRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#f0ebe0', gap: 10 },
-  itemEmoji: { fontSize: 26 },
+  itemImage: { width: 50, height: 50, borderRadius: 10 },
   itemInfo: { flex: 1 },
   itemTitle: { fontSize: 13, fontWeight: '700', color: '#1a3a2a' },
   itemStatus: { fontSize: 11, marginTop: 2 },
-  itemMeta: { fontSize: 11, color: '#8a7d6b', marginTop: 2 },
-  claimedBadge: { fontSize: 11, color: '#27ae60', marginTop: 4 },
-  borrowBtn: { backgroundColor: '#1a3a2a', padding: 8, borderRadius: 8, minWidth: 70, alignItems: 'center' },
-  borrowBtnDisabled: { backgroundColor: '#ddd3c0' },
-  borrowBtnText: { color: 'white', fontSize: 11, fontWeight: 'bold' },
+  dateText: { fontSize: 10, color:'#555', marginTop:2 },
+  borrowBtn: { backgroundColor: '#1a3a2a', padding: 8, borderRadius: 8 },
+  borrowBtnText: { color: 'white', fontSize: 11 },
+  chatBtn: { backgroundColor: '#27ae60', padding: 8, borderRadius: 8 },
+  chatBtnText: { color: 'white', fontSize: 12 },
+  deleteBtn: { padding:8, backgroundColor:'#e74c3c', borderRadius:8, marginLeft:5 },
+  deleteBtnText: { color:'white', fontSize:12 },
+  messageBox: { padding:8, borderRadius:8, marginVertical:4, maxWidth:'70%' },
+  myMsg: { backgroundColor:'#1a3a2a', alignSelf:'flex-end' },
+  otherMsg: { backgroundColor:'#ddd3c0', alignSelf:'flex-start' },
+  messageText: { color:'white' },
+  sender: { fontSize:9, color:'#eee', marginTop:2 },
+  inputRow: { flexDirection:'row', alignItems:'center', marginTop:5 },
+  sendBtn: { padding:10, backgroundColor:'#1a3a2a', borderRadius:8, marginLeft:5 }
 });
