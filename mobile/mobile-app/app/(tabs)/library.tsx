@@ -2,13 +2,22 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, TextInput, Alert, ActivityIndicator, FlatList, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, onSnapshot, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
 const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
 
-interface LibraryItem { id: string; title: string; imageURL: string; available?: boolean; borrower?: string | null; }
+interface LibraryItem {
+  id: string;
+  title: string;
+  imageURL: string;
+  available?: boolean;
+  borrower?: string | null;
+  borrowStart?: string | null;
+  borrowEnd?: string | null;
+  owner?: string | null;
+}
 
 export default function LibraryScreen() {
   const [activeTab, setActiveTab] = useState<'borrow' | 'lost'>('borrow');
@@ -16,10 +25,12 @@ export default function LibraryScreen() {
   const [lostItems, setLostItems] = useState<LibraryItem[]>([]);
   const [image, setImage] = useState<{ uri: string } | null>(null);
   const [title, setTitle] = useState('');
+  const [borrowStart, setBorrowStart] = useState('');
+  const [borrowEnd, setBorrowEnd] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // --- Chat Modal State ---
+  // Chat State
   const [chatVisible, setChatVisible] = useState(false);
   const [chatItem, setChatItem] = useState<LibraryItem | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -72,17 +83,17 @@ export default function LibraryScreen() {
       const imageURL = await uploadToCloudinary();
       const colName = activeTab === 'borrow' ? "library" : "lost";
       const docData = activeTab === 'borrow'
-        ? { title, imageURL, available: true, borrower: null, createdAt: serverTimestamp(), owner: auth.currentUser.email }
+        ? { title, imageURL, available: true, borrower: null, createdAt: serverTimestamp(), owner: auth.currentUser.email, borrowStart: borrowStart || null, borrowEnd: borrowEnd || null }
         : { title, imageURL, createdAt: serverTimestamp(), owner: auth.currentUser.email };
       await addDoc(collection(db, colName), docData);
       Alert.alert("تم ✅", "اتضاف بنجاح");
-      setTitle(''); setImage(null);
+      setTitle(''); setImage(null); setBorrowStart(''); setBorrowEnd('');
       fetchItems();
     } catch { Alert.alert("خطأ", "حصل مشكلة"); }
     setLoading(false);
   };
 
-  // --- Chat Functions ---
+  // Chat Functions
   const openChat = (item: LibraryItem, collectionName: string) => {
     setChatItem(item);
     setChatVisible(true);
@@ -110,27 +121,75 @@ export default function LibraryScreen() {
   const renderItems = (items: LibraryItem[], isBorrow: boolean) => (
     <View style={styles.contentRow}>
       <View style={styles.itemsList}>
-        {items.map(item => (
-          <View key={item.id} style={styles.itemRow}>
-            {item.imageURL && <Image source={{ uri: item.imageURL }} style={styles.itemImage} />}
-            <View style={styles.itemInfo}>
-              <Text style={styles.itemTitle}>{item.title}</Text>
-              {isBorrow && <Text style={[styles.itemStatus, { color: item.available ? '#27ae60' : '#c0392b' }]}>{item.available ? '✅ متاح' : '❌ مستعار'}</Text>}
+        {items.map(item => {
+          const isOwner = item.owner === auth.currentUser?.email;
+          return (
+            <View key={item.id} style={styles.itemRow}>
+              {item.imageURL && <Image source={{ uri: item.imageURL }} style={styles.itemImage} />}
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemTitle}>{item.title}</Text>
+                {isBorrow && <Text style={[styles.itemStatus, { color: item.available ? '#27ae60' : '#c0392b' }]}>{item.available ? '✅ متاح' : '❌ مستعار'}</Text>}
+                {isBorrow && <Text style={styles.dateText}>{item.borrowStart && item.borrowEnd ? `📅 ${item.borrowStart} → ${item.borrowEnd}` : ''}</Text>}
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 5 }}>
+                {/* زر تعديل الحالة للمالك فقط */}
+                {isBorrow && isOwner && (
+                  <TouchableOpacity 
+                    style={[styles.borrowBtn, { backgroundColor: item.available ? '#1a3a2a' : '#c0392b' }]}
+                    onPress={async () => {
+                      try {
+                        await updateDoc(doc(db, "library", item.id), { available: !item.available });
+                        setLibraryItems(prev => prev.map(i => i.id === item.id ? {...i, available: !i.available} : i));
+                      } catch { Alert.alert("خطأ", "فشل تحديث الحالة"); }
+                    }}
+                  >
+                    <Text style={styles.borrowBtnText}>{item.available ? 'استعر' : 'غير متاح'}</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* زر الحذف للمالك فقط */}
+                {isOwner && (
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={async () => {
+                      try {
+                        const colName = activeTab === 'borrow' ? "library" : "lost";
+                        await deleteDoc(doc(db, colName, item.id));
+                        if (activeTab === 'borrow') {
+                          setLibraryItems(prev => prev.filter(i => i.id !== item.id));
+                        } else {
+                          setLostItems(prev => prev.filter(i => i.id !== item.id));
+                        }
+                        Alert.alert("تم الحذف ✅", "تم حذف المنتج بنجاح");
+                      } catch (err) {
+                        console.log("Delete error:", err);
+                        Alert.alert("خطأ ❌", "فشل الحذف");
+                      }
+                    }}
+                  >
+                    <Text style={styles.deleteBtnText}>🗑️</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* زر الدردشة لكل شخص */}
+                <TouchableOpacity 
+                  style={styles.chatBtn}
+                  onPress={() => openChat(item, activeTab === 'borrow' ? 'library' : 'lost')}
+                >
+                  <Text style={styles.chatBtnText}>💬</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={{ flexDirection: 'row', gap: 5 }}>
-              {isBorrow && <TouchableOpacity style={styles.borrowBtn}><Text style={styles.borrowBtnText}>استعر</Text></TouchableOpacity>}
-              <TouchableOpacity 
-                style={styles.chatBtn}
-                onPress={() => openChat(item, activeTab === 'borrow' ? 'library' : 'lost')}
-              >
-                <Text style={styles.chatBtnText}>💬</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
+
+      {/* إضافة عناصر جديدة */}
       <View style={styles.addBox}>
         <TextInput placeholder="اسم الحاجة" style={styles.input} value={title} onChangeText={setTitle} />
+        <TextInput placeholder="تاريخ بداية الاستعارة (YYYY-MM-DD)" style={styles.input} value={borrowStart} onChangeText={setBorrowStart} />
+        <TextInput placeholder="تاريخ نهاية الاستعارة (YYYY-MM-DD)" style={styles.input} value={borrowEnd} onChangeText={setBorrowEnd} />
         <TouchableOpacity style={styles.imageBox} onPress={pickImage}>
           {image ? <Image source={{ uri: image.uri }} style={styles.image} /> : <Text>📷 اختاري صورة</Text>}
         </TouchableOpacity>
@@ -145,7 +204,6 @@ export default function LibraryScreen() {
     <View style={styles.container}>
       <View style={styles.header}><Text style={styles.headerTitle}>📚 المكتبة</Text></View>
 
-      {/* Tabs */}
       <View style={styles.tabRow}>
         <TouchableOpacity style={[styles.tab, activeTab === 'borrow' && styles.tabActive]} onPress={() => { setActiveTab('borrow'); setSearchQuery(''); }}>
           <Text style={[styles.tabText, activeTab === 'borrow' && styles.tabTextActive]}>🥼 الاستعارة</Text>
@@ -155,7 +213,6 @@ export default function LibraryScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Search */}
       <TextInput
         placeholder="ابحث باسم الحاجة"
         style={styles.searchInput}
@@ -167,14 +224,13 @@ export default function LibraryScreen() {
         {activeTab === 'borrow' ? renderItems(filteredLibrary, true) : renderItems(filteredLost, false)}
       </ScrollView>
 
-      {/* --- Chat Modal --- */}
+      {/* Chat Modal */}
       <Modal visible={chatVisible} animationType="slide" onRequestClose={() => setChatVisible(false)}>
         <View style={{ flex:1, backgroundColor:'#f5f0e8', padding:10 }}>
           <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }}>
             <Text style={{ fontSize:16, fontWeight:'bold' }}>{chatItem?.title}</Text>
             <TouchableOpacity onPress={() => setChatVisible(false)}><Text style={{fontSize:18}}>❌</Text></TouchableOpacity>
           </View>
-
           <FlatList
             data={messages}
             keyExtractor={item => item.id}
@@ -186,7 +242,6 @@ export default function LibraryScreen() {
             )}
             style={{ flex:1, marginTop:10 }}
           />
-
           <View style={styles.inputRow}>
             <TextInput value={text} onChangeText={setText} style={styles.input} placeholder="اكتب رسالة..." />
             <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}><Text style={{color:'white'}}>إرسال</Text></TouchableOpacity>
@@ -197,7 +252,6 @@ export default function LibraryScreen() {
   );
 }
 
-// --- Styles ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f0e8' },
   header: { backgroundColor: '#1a3a2a', padding: 20, paddingTop: 50 },
@@ -221,10 +275,13 @@ const styles = StyleSheet.create({
   itemInfo: { flex: 1 },
   itemTitle: { fontSize: 13, fontWeight: '700', color: '#1a3a2a' },
   itemStatus: { fontSize: 11, marginTop: 2 },
+  dateText: { fontSize: 10, color:'#555', marginTop:2 },
   borrowBtn: { backgroundColor: '#1a3a2a', padding: 8, borderRadius: 8 },
   borrowBtnText: { color: 'white', fontSize: 11 },
   chatBtn: { backgroundColor: '#27ae60', padding: 8, borderRadius: 8 },
   chatBtnText: { color: 'white', fontSize: 12 },
+  deleteBtn: { padding:8, backgroundColor:'#e74c3c', borderRadius:8, marginLeft:5 },
+  deleteBtnText: { color:'white', fontSize:12 },
   messageBox: { padding:8, borderRadius:8, marginVertical:4, maxWidth:'70%' },
   myMsg: { backgroundColor:'#1a3a2a', alignSelf:'flex-end' },
   otherMsg: { backgroundColor:'#ddd3c0', alignSelf:'flex-start' },
