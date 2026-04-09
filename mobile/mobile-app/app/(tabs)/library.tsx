@@ -1,8 +1,8 @@
 // LibraryScreen.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, TextInput, Alert, ActivityIndicator, FlatList, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, addDoc, getDocs, serverTimestamp, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 
 const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
@@ -18,6 +18,12 @@ export default function LibraryScreen() {
   const [title, setTitle] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // --- Chat Modal State ---
+  const [chatVisible, setChatVisible] = useState(false);
+  const [chatItem, setChatItem] = useState<LibraryItem | null>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [text, setText] = useState('');
 
   useEffect(() => { fetchItems(); }, []);
 
@@ -76,6 +82,28 @@ export default function LibraryScreen() {
     setLoading(false);
   };
 
+  // --- Chat Functions ---
+  const openChat = (item: LibraryItem, collectionName: string) => {
+    setChatItem(item);
+    setChatVisible(true);
+    const q = query(collection(db, collectionName, item.id, 'messages'), orderBy('createdAt', 'asc'));
+    onSnapshot(q, snapshot => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
+      setMessages(msgs);
+    });
+  };
+
+  const sendMessage = async () => {
+    if (!text.trim() || !chatItem) return;
+    const colName = activeTab === 'borrow' ? 'library' : 'lost';
+    await addDoc(collection(db, colName, chatItem.id, 'messages'), {
+      sender: auth.currentUser?.email,
+      text: text.trim(),
+      createdAt: serverTimestamp()
+    });
+    setText('');
+  };
+
   const filteredLibrary = libraryItems.filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredLost = lostItems.filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -89,7 +117,15 @@ export default function LibraryScreen() {
               <Text style={styles.itemTitle}>{item.title}</Text>
               {isBorrow && <Text style={[styles.itemStatus, { color: item.available ? '#27ae60' : '#c0392b' }]}>{item.available ? '✅ متاح' : '❌ مستعار'}</Text>}
             </View>
-            {isBorrow && <TouchableOpacity style={styles.borrowBtn}><Text style={styles.borrowBtnText}>استعر</Text></TouchableOpacity>}
+            <View style={{ flexDirection: 'row', gap: 5 }}>
+              {isBorrow && <TouchableOpacity style={styles.borrowBtn}><Text style={styles.borrowBtnText}>استعر</Text></TouchableOpacity>}
+              <TouchableOpacity 
+                style={styles.chatBtn}
+                onPress={() => openChat(item, activeTab === 'borrow' ? 'library' : 'lost')}
+              >
+                <Text style={styles.chatBtnText}>💬</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
       </View>
@@ -130,10 +166,38 @@ export default function LibraryScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
         {activeTab === 'borrow' ? renderItems(filteredLibrary, true) : renderItems(filteredLost, false)}
       </ScrollView>
+
+      {/* --- Chat Modal --- */}
+      <Modal visible={chatVisible} animationType="slide" onRequestClose={() => setChatVisible(false)}>
+        <View style={{ flex:1, backgroundColor:'#f5f0e8', padding:10 }}>
+          <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }}>
+            <Text style={{ fontSize:16, fontWeight:'bold' }}>{chatItem?.title}</Text>
+            <TouchableOpacity onPress={() => setChatVisible(false)}><Text style={{fontSize:18}}>❌</Text></TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={messages}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <View style={[styles.messageBox, item.sender === auth.currentUser?.email ? styles.myMsg : styles.otherMsg]}>
+                <Text style={styles.messageText}>{item.text}</Text>
+                <Text style={styles.sender}>{item.sender}</Text>
+              </View>
+            )}
+            style={{ flex:1, marginTop:10 }}
+          />
+
+          <View style={styles.inputRow}>
+            <TextInput value={text} onChangeText={setText} style={styles.input} placeholder="اكتب رسالة..." />
+            <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}><Text style={{color:'white'}}>إرسال</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
+// --- Styles ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f0e8' },
   header: { backgroundColor: '#1a3a2a', padding: 20, paddingTop: 50 },
@@ -158,5 +222,14 @@ const styles = StyleSheet.create({
   itemTitle: { fontSize: 13, fontWeight: '700', color: '#1a3a2a' },
   itemStatus: { fontSize: 11, marginTop: 2 },
   borrowBtn: { backgroundColor: '#1a3a2a', padding: 8, borderRadius: 8 },
-  borrowBtnText: { color: 'white', fontSize: 11 }
+  borrowBtnText: { color: 'white', fontSize: 11 },
+  chatBtn: { backgroundColor: '#27ae60', padding: 8, borderRadius: 8 },
+  chatBtnText: { color: 'white', fontSize: 12 },
+  messageBox: { padding:8, borderRadius:8, marginVertical:4, maxWidth:'70%' },
+  myMsg: { backgroundColor:'#1a3a2a', alignSelf:'flex-end' },
+  otherMsg: { backgroundColor:'#ddd3c0', alignSelf:'flex-start' },
+  messageText: { color:'white' },
+  sender: { fontSize:9, color:'#eee', marginTop:2 },
+  inputRow: { flexDirection:'row', alignItems:'center', marginTop:5 },
+  sendBtn: { padding:10, backgroundColor:'#1a3a2a', borderRadius:8, marginLeft:5 }
 });
