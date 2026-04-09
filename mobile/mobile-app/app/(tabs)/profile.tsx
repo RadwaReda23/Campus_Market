@@ -1,228 +1,161 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
-import { useRouter } from 'expo-router';
-import { signOut, updateProfile, onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../firebase';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Button,
+  Image,
+  Alert,
+} from "react-native";
 
-export default function ProfileScreen() {
-  const router = useRouter();
+import * as ImagePicker from "expo-image-picker";
+import { getAuth, updateProfile } from "firebase/auth";
 
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [products, setProducts] = useState<any[]>([]);
+export default function Profile() {
+  const auth = getAuth();
+  const user = auth.currentUser;
 
+  const [name, setName] = useState("");
+  const [image, setImage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // تحميل بيانات المستخدم
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        setName(user.displayName || '');
-        setEmail(user.email || '');
-
-        fetchMyProducts(user.uid);
-      }
-    });
-
-    return unsubscribe;
+    if (user) {
+      setName(user.displayName || "");
+      setImage(user.photoURL || null);
+    }
   }, []);
 
-  // 📦 جلب منتجات المستخدم
-  const fetchMyProducts = async (uid: string) => {
+  // =========================
+  // اختيار صورة
+  // =========================
+  const pickImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
+    }
+  };
+
+  // =========================
+  // رفع الصورة على Cloudinary
+  // =========================
+  const uploadImage = async (imageUri: string) => {
     try {
-      const q = query(
-        collection(db, "products"),
-        where("sellerId", "==", uid)
+      const data = new FormData();
+
+      data.append("file", {
+        uri: imageUri,
+        type: "image/jpeg",
+        name: "profile.jpg",
+      } as any);
+
+      // ⚠️ لازم يكون unsigned preset
+      data.append("upload_preset", "unsigned_preset");
+
+      const res = await fetch(
+        "https://api.cloudinary.com/v1_1/dz4nwclvu/image/upload",
+        {
+          method: "POST",
+          body: data,
+        }
       );
 
-      const snapshot = await getDocs(q);
+      const result = await res.json();
 
-      const list = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      console.log("Cloudinary response:", result);
 
-      setProducts(list);
-    } catch (err) {
-      console.log("Error loading my products:", err);
+      if (!result.secure_url) {
+        throw new Error("Upload failed");
+      }
+
+      return result.secure_url;
+    } catch (error) {
+      console.log("Upload error:", error);
+      Alert.alert("خطأ", "فشل رفع الصورة");
+      return null;
     }
   };
 
-  const handleLogout = async () => {
-    await signOut(auth);
-    router.replace('/Register');
-  };
+  // =========================
+  // حفظ التعديلات
+  // =========================
+  const saveChanges = async () => {
+    if (!user) return;
 
-  const handleUpdate = async () => {
-    const user = auth.currentUser;
-    if (user) {
+    try {
+      setLoading(true);
+
+      let imageUrl = user.photoURL;
+
+      // لو المستخدم اختار صورة جديدة
+      if (image && image !== user.photoURL) {
+        const uploaded = await uploadImage(image);
+        if (uploaded) imageUrl = uploaded;
+      }
+
       await updateProfile(user, {
         displayName: name,
+        photoURL: imageUrl,
       });
-      alert("Profile updated ✅");
+
+      // تحديث البيانات فوراً
+      await user.reload();
+
+      Alert.alert("تم", "تم حفظ التعديلات بنجاح ✅");
+    } catch (error) {
+      console.log(error);
+      Alert.alert("خطأ", "حدث خطأ أثناء الحفظ");
+    } finally {
+      setLoading(false);
     }
   };
 
+  // =========================
+  // UI
+  // =========================
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 30 }}>
-      
-      {/* Header */}
-      <View style={styles.profileHeader}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {name ? name.charAt(0).toUpperCase() : "?"}
-          </Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.profileName}>{name || "No Name"}</Text>
-          <Text style={styles.profileRole}>{email || ""}</Text>
-        </View>
-      </View>
+    <View style={{ padding: 20 }}>
 
-      {/* Products */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🛒 منتجاتي</Text>
+      <Text style={{ fontSize: 20, marginBottom: 10 }}>
+        حسابي
+      </Text>
 
-        {products.length === 0 ? (
-          <Text style={{ padding: 12, color: '#888' }}>
-            لا يوجد منتجات حتى الآن
-          </Text>
-        ) : (
-          products.map(p => (
-            <View key={p.id} style={styles.productRow}>
-              <Text style={styles.productEmoji}>📦</Text>
+      {image && (
+        <Image
+          source={{ uri: image }}
+          style={{
+            width: 120,
+            height: 120,
+            borderRadius: 60,
+            marginBottom: 10,
+          }}
+        />
+      )}
 
-              <View style={{ flex: 1 }}>
-                <Text style={styles.productTitle}>{p.title}</Text>
-                <Text style={styles.productMeta}>👁 {p.views || 0} مشاهدة</Text>
-              </View>
+      <Button title="اختيار صورة" onPress={pickImage} />
 
-              <Text style={styles.productPrice}>{p.price} ج</Text>
-            </View>
-          ))
-        )}
-      </View>
+      <TextInput
+        placeholder="الاسم"
+        value={name}
+        onChangeText={setName}
+        style={{
+          borderWidth: 1,
+          marginVertical: 15,
+          padding: 10,
+          borderRadius: 8,
+        }}
+      />
 
-      {/* Settings */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>⚙️ إعدادات الحساب</Text>
-
-        <View style={styles.uiBox}>
-          <Text style={styles.label}>الاسم</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="أدخل اسمك"
-            value={name}
-            onChangeText={setName}
-          />
-        </View>
-
-        <View style={styles.uiBox}>
-          <Text style={styles.label}>الإيميل</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            editable={false}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.updateBtn} onPress={handleUpdate}>
-          <Text style={styles.updateText}>Update Profile</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Logout */}
-      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-        <Text style={styles.logoutText}>🚪 تسجيل الخروج</Text>
-      </TouchableOpacity>
-
-    </ScrollView>
+      <Button
+        title={loading ? "جارى الحفظ..." : "حفظ التعديلات"}
+        onPress={saveChanges}
+        disabled={loading}
+      />
+    </View>
   );
 }
-
-// 🎨 Styles
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f0e8' },
-
-  profileHeader: {
-    backgroundColor: '#1a3a2a',
-    padding: 24,
-    paddingTop: 50,
-    flexDirection: 'row',
-    gap: 16,
-    alignItems: 'center'
-  },
-
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#c8a84b',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-
-  avatarText: { color: '#1a3a2a', fontSize: 26, fontWeight: '900' },
-  profileName: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  profileRole: { color: '#c8a84b', fontSize: 12 },
-
-  section: {
-    margin: 16,
-    backgroundColor: 'white',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#ddd3c0',
-    overflow: 'hidden'
-  },
-
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1a3a2a',
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd3c0'
-  },
-
-  productRow: {
-    flexDirection: 'row',
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0ebe0',
-    alignItems: 'center'
-  },
-
-  productEmoji: { fontSize: 24, marginRight: 10 },
-  productTitle: { fontSize: 13, fontWeight: '700' },
-  productMeta: { fontSize: 11, color: '#8a7d6b' },
-  productPrice: { fontWeight: 'bold', color: '#c8a84b' },
-
-  uiBox: { padding: 12 },
-  label: { fontSize: 12, color: '#8a7d6b', marginBottom: 5 },
-
-  input: {
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    backgroundColor: '#fafafa'
-  },
-
-  updateBtn: {
-    backgroundColor: '#1a3a2a',
-    padding: 12,
-    margin: 12,
-    borderRadius: 10,
-    alignItems: 'center'
-  },
-
-  updateText: { color: 'white', fontWeight: 'bold' },
-
-  logoutBtn: {
-    margin: 16,
-    backgroundColor: '#c0392b',
-    padding: 14,
-    borderRadius: 12,
-    alignItems: 'center'
-  },
-
-  logoutText: { color: 'white', fontWeight: 'bold' }
-});
