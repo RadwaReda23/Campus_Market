@@ -430,11 +430,10 @@ function ProductsPage({ searchQuery = "", onStartChat }) {
                 <div className="product-meta">
                   <div>
                     <div className="product-seller">{p.seller}</div>
-                    <span className={`seller-type ${
-                      p.sellerType === "طالب" ? "type-student" :
-                      p.sellerType === "دكتور" ? "type-doctor" :
-                      p.sellerType === "خريجة" || p.sellerType === "خريج" ? "type-grad" : "type-staff"
-                    }`}>{p.sellerType}</span>
+                    <span className={`seller-type ${p.sellerType === "طالب" ? "type-student" :
+                        p.sellerType === "دكتور" ? "type-doctor" :
+                          p.sellerType === "خريجة" || p.sellerType === "خريج" ? "type-grad" : "type-staff"
+                      }`}>{p.sellerType}</span>
                   </div>
                   <div className="product-views">
                     {auth.currentUser?.uid !== p.sellerId ? (
@@ -479,11 +478,18 @@ function LostFoundPage({ onStartChat }) {
     fetchLost();
   }, []);
 
-  // ✅ المطالبة بمفقود وتحديث Firestore
-  const handleClaim = async (item) => {
+  // ✅ تغيير حالة المفقود (مسترد/مفقود) - للمكتشف فقط
+  const handleToggleClaimed = async (item) => {
     try {
-      await updateDoc(doc(db, "lostFound", item.id), { claimed: true });
-      setLostItems(prev => prev.map(i => i.id === item.id ? { ...i, claimed: true } : i));
+      const newStatus = !item.claimed;
+      const confirmMsg = newStatus 
+        ? "هل تم استرداد هذا المفقود بالفعل؟" 
+        : "إعادة الحالة إلى 'مفقود'؟";
+        
+      if (!window.confirm(confirmMsg)) return;
+
+      await updateDoc(doc(db, "lostFound", item.id), { claimed: newStatus });
+      setLostItems(prev => prev.map(i => i.id === item.id ? { ...i, claimed: newStatus } : i));
     } catch (err) {
       console.error(err);
       alert("حصل خطأ ❌");
@@ -531,31 +537,42 @@ function LostFoundPage({ onStartChat }) {
                   <span className="lost-tag" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 6, background: COLORS.light, color: COLORS.muted }}>📍 {item.location}</span>
                   <span className="lost-tag" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 6, background: COLORS.light, color: COLORS.muted }}>🕐 {item.date}</span>
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button
-                    className={`borrow-btn ${!item.claimed ? "btn-primary" : "btn-disabled"}`}
-                    disabled={item.claimed}
-                    onClick={() => !item.claimed && handleClaim(item)}
-                    style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: !item.claimed ? "pointer" : "not-allowed", fontFamily: "'Cairo', sans-serif", fontSize: 12, fontWeight: 700 }}
-                  >
-                    {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
-                  </button>
-                  {item.finderId && auth.currentUser?.uid !== item.finderId && (
-                    <button
-                      onClick={() => onStartChat({
-                        id: item.id,
-                        title: item.title,
-                        sellerId: item.finderId,
-                        seller: item.finder
-                      })}
-                      style={{
-                        padding: "8px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
-                        background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
-                        cursor: "pointer", color: COLORS.primary, fontWeight: 600
-                      }}>
-                      💬 تواصل
-                    </button>
-                  )}
+                <div className="product-meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+                  <div>
+                    <div className="product-seller">{item.finder || "مجهول"}</div>
+                    <span className="seller-type type-grad" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, fontWeight: 700 }}>باحث</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {auth.currentUser?.uid === item.finderId && (
+                      <button
+                        className="borrow-btn"
+                        onClick={() => handleToggleClaimed(item)}
+                        style={{ 
+                          padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
+                          fontFamily: "'Cairo', sans-serif", fontSize: 11, fontWeight: 700,
+                          background: item.claimed ? COLORS.success : COLORS.danger, color: "white"
+                        }}
+                      >
+                        {item.claimed ? "✅ تم الاسترداد" : "🔴 تحديد كمُسترد"}
+                      </button>
+                    )}
+                    {auth.currentUser?.uid !== item.finderId && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onStartChat({
+                          id: item.id,
+                          title: item.title,
+                          sellerId: item.finderId || "unknown",
+                          seller: item.finder || "مجهول"
+                        });}}
+                        style={{
+                          padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                          background: COLORS.primary, color: "white", fontSize: 11, fontFamily: "'Cairo', sans-serif",
+                          cursor: "pointer", fontWeight: 700
+                        }}>
+                        💬 تواصل
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -574,7 +591,7 @@ function MessagesPage({ onOpenChat }) {
 
   useEffect(() => {
     if (!auth.currentUser) return;
-    
+
     const q = query(
       collection(db, "conversations"),
       where("participants", "array-contains", auth.currentUser.uid),
@@ -599,12 +616,12 @@ function MessagesPage({ onOpenChat }) {
       </div>
 
       {loading ? (
-         <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>جاري التحميل...</div>
+        <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>جاري التحميل...</div>
       ) : conversations.length === 0 ? (
-         <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
-            لا توجد محادثات حتى الآن
-         </div>
+        <div style={{ textAlign: "center", padding: 40, color: COLORS.muted }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>💬</div>
+          لا توجد محادثات حتى الآن
+        </div>
       ) : (
         conversations.map(conv => {
           const isUnread = conv.unreadCount?.[auth.currentUser?.uid] > 0;
@@ -612,8 +629,8 @@ function MessagesPage({ onOpenChat }) {
           const otherUserName = conv.participantNames?.[otherUserId] || "مستخدم";
 
           return (
-            <div 
-              key={conv.id} 
+            <div
+              key={conv.id}
               className={`message-item ${isUnread ? "unread" : ""}`}
               onClick={() => onOpenChat({ conversationId: conv.id, ...conv })}
             >
@@ -720,6 +737,47 @@ export default function Dashboard({ user }) {
     return () => unsubscribe();
   }, []);
 
+  const [borrowedItems, setBorrowedItems] = useState([]);
+  const [borrowedAlerts, setBorrowedAlerts] = useState([]);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const q = query(
+      collection(db, "library"),
+      where("borrowerId", "==", auth.currentUser.uid)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setBorrowedItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const checkAlerts = () => {
+      const alerts = [];
+      const now = new Date();
+      borrowedItems.forEach(item => {
+        if (!item.returnDate || item.available) return;
+        const returnDate = item.returnDate.toDate();
+        const diffMs = returnDate - now;
+        if (diffMs <= 0) {
+          alerts.push({ id: item.id, type: "overdue", message: `❗ تأخرت في إرجاع "${item.title}"! الرجاء إرجاعه فوراً لمالكه وتأكيد التسليم.` });
+        } else {
+          if (item.durationType === "days" && diffMs <= 24 * 60 * 60 * 1000) {
+            alerts.push({ id: item.id, type: "warning", message: `⚠️ تذكير: يجب إرجاع "${item.title}" خلال أقل من 24 ساعة.` });
+          } else if (item.durationType === "hours" && diffMs <= 15 * 60 * 1000) {
+            alerts.push({ id: item.id, type: "warning", message: `⏲️ تحذير: باقي أقل من ربع ساعة على إرجاع "${item.title}"!` });
+          }
+        }
+      });
+      setBorrowedAlerts(alerts);
+    };
+
+    checkAlerts();
+    const interval = setInterval(checkAlerts, 60000);
+    return () => clearInterval(interval);
+  }, [borrowedItems]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -753,7 +811,8 @@ export default function Dashboard({ user }) {
       sellerId: productData.sellerId,
       sellerName: productData.seller,
       buyerId: auth.currentUser?.uid,
-      buyerName: auth.currentUser?.displayName || auth.currentUser?.email
+      buyerName: auth.currentUser?.displayName || auth.currentUser?.email,
+      isLibrary: productData.isLibrary
     });
     setActivePage("chat");
   };
@@ -764,9 +823,10 @@ export default function Dashboard({ user }) {
       conversationId: convData.id,
       productId: convData.productId,
       productTitle: convData.productTitle,
-      sellerId: convData.participants[1], 
+      sellerId: convData.participants[1],
       buyerId: convData.participants[0],
-      participantNames: convData.participantNames
+      participantNames: convData.participantNames,
+      isLibrary: convData.isLibrary
     });
     setActivePage("chat");
   };
@@ -1110,6 +1170,18 @@ export default function Dashboard({ user }) {
             </div>
           </div>
           <div className="content">
+            {borrowedAlerts.map(alert => (
+              <div key={alert.id} style={{
+                background: alert.type === "overdue" ? "#fef2f2" : "#fffbf0",
+                border: `1px solid ${alert.type === "overdue" ? "#dc2626" : "#f59e0b"}`,
+                color: alert.type === "overdue" ? "#991b1b" : "#b45309",
+                padding: "12px 20px", borderRadius: 12, marginBottom: 16,
+                fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 10,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.05)"
+              }}>
+                {alert.message}
+              </div>
+            ))}
             {pageMap[activePage]}
           </div>
         </div>

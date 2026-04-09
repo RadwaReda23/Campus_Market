@@ -10,6 +10,9 @@ export default function ChatView({ chatData, onBack }) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showDurationModal, setShowDurationModal] = useState(false);
+  const [durationValue, setDurationValue] = useState("");
+  const [durationType, setDurationType] = useState("days");
   const messagesEndRef = useRef(null);
 
   const currentUser = auth.currentUser;
@@ -39,7 +42,8 @@ export default function ChatView({ chatData, onBack }) {
             [currentUser.uid]: 0,
             [chatData.sellerId]: 0
           },
-          createdAt: serverTimestamp()
+          createdAt: serverTimestamp(),
+          isLibrary: chatData.isLibrary || false
         });
       } else {
         // تصفير العداد عند فتح المحادثة
@@ -120,8 +124,47 @@ export default function ChatView({ chatData, onBack }) {
     return chatData.sellerId === currentUser.uid ? chatData.buyerName : chatData.sellerName;
   };
 
+  const handleSetDuration = async () => {
+    if (!durationValue || isNaN(durationValue) || Number(durationValue) <= 0) {
+      alert("الرجاء إدخال رقم صحيح.");
+      return;
+    }
+    try {
+      const ms = durationType === "days" ? Number(durationValue) * 24 * 60 * 60 * 1000 : Number(durationValue) * 60 * 60 * 1000;
+      const calculatedTimestamp = new Date(Date.now() + ms);
+
+      const otherUserId = Object.keys(chatData.participantNames || {}).find(id => id !== currentUser.uid) || chatData.buyerId;
+
+      const itemRef = doc(db, "library", chatData.productId);
+      await updateDoc(itemRef, {
+        available: false,
+        borrowerId: otherUserId,
+        borrower: getOtherUserName(),
+        returnDate: calculatedTimestamp,
+        durationType: durationType
+      });
+
+      const text = `تم تثبيت الاستعارة لك. مدة الاستعارة: ${durationValue} ${durationType === "days" ? "أيام" : "ساعات"}. يرجى الالتزام بالموعد و إعادة العنصر.`;
+      const messagesRef = collection(db, "conversations", convId, "messages");
+      await addDoc(messagesRef, {
+        text,
+        senderId: currentUser.uid,
+        senderName: currentUser.displayName || currentUser.email || "النظام",
+        timestamp: serverTimestamp(),
+        isSystemMessage: true,
+      });
+
+      setShowDurationModal(false);
+      alert("تم تأكيد الاستعارة بنجاح!");
+    } catch (err) {
+      console.error(err);
+      alert("حصل خطأ أثناء تحديث الإعارة.");
+    }
+  };
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", background: "white", borderRadius: 16, border: `1px solid ${COLORS.border}`, overflow: "hidden", direction: "rtl", fontFamily: "'Cairo', sans-serif" }}>
+    <>
+      <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", background: "white", borderRadius: 16, border: `1px solid ${COLORS.border}`, overflow: "hidden", direction: "rtl", fontFamily: "'Cairo', sans-serif" }}>
       
       {/* Header */}
       <div style={{ padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.light, display: "flex", alignItems: "center", gap: 14 }}>
@@ -131,10 +174,21 @@ export default function ChatView({ chatData, onBack }) {
         <div style={{ width: 44, height: 44, borderRadius: "50%", background: COLORS.accent, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: 18, flexShrink: 0 }}>
           {getOtherUserName() ? getOtherUserName()[0].toUpperCase() : "👤"}
         </div>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.primary }}>{getOtherUserName()}</div>
           <div style={{ fontSize: 12, color: COLORS.muted }}>بخصوص: <strong style={{ color: COLORS.accent }}>{chatData.productTitle}</strong></div>
         </div>
+        {chatData.isLibrary && currentUser.uid === chatData.sellerId && (
+          <button 
+            onClick={() => setShowDurationModal(true)}
+            style={{
+              padding: "6px 12px", background: COLORS.accent, color: "white", 
+              border: "none", borderRadius: 8, fontFamily: "'Cairo', sans-serif", 
+              fontSize: 12, fontWeight: 700, cursor: "pointer"
+            }}>
+            ⏳ تحديد الاستعارة
+          </button>
+        )}
       </div>
 
       {/* Messages Area */}
@@ -198,5 +252,43 @@ export default function ChatView({ chatData, onBack }) {
       </form>
 
     </div>
+      
+      {showDurationModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, direction: "rtl", fontFamily: "'Cairo', sans-serif" }}>
+          <div style={{ background: "white", padding: 24, borderRadius: 16, width: 320 }}>
+            <h3 style={{ marginBottom: 16, color: COLORS.primary, fontSize: 16 }}>⏳ تحديد مدة الاستعارة</h3>
+            
+            <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+              <input 
+                type="number" 
+                value={durationValue} 
+                onChange={(e) => setDurationValue(e.target.value)}
+                placeholder="المدة..."
+                style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`, outline: "none", fontFamily: "'Cairo', sans-serif" }}
+              />
+              <select 
+                value={durationType}
+                onChange={(e) => setDurationType(e.target.value)}
+                style={{ padding: "8px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`, outline: "none", fontFamily: "'Cairo', sans-serif" }}
+              >
+                <option value="days">أيام</option>
+                <option value="hours">ساعات</option>
+              </select>
+            </div>
+            
+            <div style={{ display: "flex", gap: 12 }}>
+              <button 
+                onClick={handleSetDuration}
+                style={{ flex: 1, padding: "10px", background: COLORS.primary, color: "white", border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontFamily: "'Cairo', sans-serif" }}
+              >تأكيد الاستعارة</button>
+              <button 
+                onClick={() => setShowDurationModal(false)}
+                style={{ flex: 1, padding: "10px", background: COLORS.light, color: COLORS.primary, border: "none", borderRadius: 8, cursor: "pointer", fontWeight: 700, fontFamily: "'Cairo', sans-serif" }}
+              >إلغاء</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

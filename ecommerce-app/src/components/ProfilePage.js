@@ -144,8 +144,6 @@ function RateModal({ targetUser, onClose, currentUser }) {
 export default function ProfilePage() {
   const [userData, setUserData] = useState(null);
   const [myProducts, setMyProducts] = useState([]);
-  const [activeProducts, setActiveProducts] = useState(0);
-  const [soldProducts, setSoldProducts] = useState(0);
   const [avgRating, setAvgRating] = useState(0);
   const [ratingCount, setRatingCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -175,16 +173,48 @@ export default function ProfilePage() {
         }
         setUserData({ ...firestoreData, uid: user.uid, displayName: user.displayName, email: user.email, photoURL: user.photoURL });
 
-        // جيب منتجات المستخدم
-        const q = query(collection(db, "products"), where("sellerId", "==", user.uid));
-        const snap = await getDocs(q);
-        const products = snap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+        // جيب منتجات ومكتبة المستخدم
+        const [prodSnap, libSnap, lostSnap] = await Promise.all([
+          getDocs(query(collection(db, "products"), where("sellerId", "==", user.uid))),
+          getDocs(collection(db, "library")),
+          getDocs(collection(db, "lostFound"))
+        ]);
+
+        const products = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         
-        setMyProducts(products);
-        setActiveProducts(products.filter(p => p.status === "active").length);
-        setSoldProducts(products.filter(p => p.status === "sold").length);
+        let libraryItems = libSnap.docs.map(d => ({ 
+          id: d.id, ...d.data(), 
+          isLibrary: true, price: "مجاني", 
+          views: 0
+        }));
+        
+        // Filter in memory just in case addedById is missing but addedBy matches
+        libraryItems = libraryItems.filter(item => 
+          item.addedById === user.uid || 
+          item.addedBy === user.displayName || 
+          item.addedBy === user.email
+        );
+
+        let lostItems = lostSnap.docs.map(d => ({
+          id: d.id, ...d.data(),
+          isLibrary: true, isLostAndFound: true, price: "مفقود",
+          views: 0
+        }));
+
+        lostItems = lostItems.filter(item => 
+          item.finderId === user.uid || 
+          item.finder === user.displayName || 
+          item.finder === user.email
+        );
+
+        const combined = [...products, ...libraryItems, ...lostItems]
+          .sort((a, b) => {
+            const timeA = a.createdAt?.toMillis?.() || a.createdAt?.getTime?.() || 0;
+            const timeB = b.createdAt?.toMillis?.() || b.createdAt?.getTime?.() || 0;
+            return timeB - timeA;
+          });
+        
+        setMyProducts(combined);
       } catch (err) {
         console.error(err);
       } finally {
@@ -226,8 +256,12 @@ export default function ProfilePage() {
   };
 
   const displayedProducts = myProducts.filter(p =>
-    activeTab === "active" ? p.status === "active" : p.status === "sold"
+    activeTab === "library" ? p.isLibrary : (!p.isLibrary && p.status === activeTab)
   );
+
+  const activeProducts = myProducts.filter(p => !p.isLibrary && p.status === "active").length;
+  const soldProducts = myProducts.filter(p => !p.isLibrary && p.status === "sold").length;
+  const libraryCount = myProducts.filter(p => p.isLibrary).length;
 
   const roleColors = {
     "طالب": { bg: "#dbeafe", color: "#1d4ed8" },
@@ -373,6 +407,7 @@ export default function ProfilePage() {
               {[
                 { key: "active", label: `معروض (${activeProducts})` },
                 { key: "sold", label: `مُباع (${soldProducts})` },
+                { key: "library", label: `المكتبة (${libraryCount})` },
               ].map(tab => (
                 <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
                   padding: "4px 12px", borderRadius: 20, border: "none", cursor: "pointer",
@@ -387,9 +422,9 @@ export default function ProfilePage() {
           <div style={{ padding: 16, maxHeight: 380, overflowY: "auto" }}>
             {displayedProducts.length === 0 ? (
               <div style={{ textAlign: "center", padding: "30px 0", color: COLORS.muted }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>{activeTab === "active" ? "📦" : "🏷️"}</div>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>{activeTab === "active" ? "📦" : activeTab === "sold" ? "🏷️" : "📚"}</div>
                 <div style={{ fontSize: 13 }}>
-                  {activeTab === "active" ? "مفيش منتجات معروضة" : "مفيش منتجات مُباعة"}
+                  {activeTab === "active" ? "مفيش منتجات معروضة" : activeTab === "sold" ? "مفيش منتجات مُباعة" : "مفيش منتجات في المكتبة"}
                 </div>
               </div>
             ) : (
@@ -415,13 +450,25 @@ export default function ProfilePage() {
                     </div>
                   </div>
                   <div style={{ flexShrink: 0, textAlign: "left" }}>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: COLORS.accent }}>{p.price} ج</div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: COLORS.accent }}>{p.price}{p.price !== "مجاني" && p.price !== "مفقود" && " ج"}</div>
                     <div style={{
                       fontSize: 10, padding: "2px 7px", borderRadius: 10, marginTop: 3,
-                      background: p.status === "active" ? "#d4f4e0" : "#fde8e8",
-                      color: p.status === "active" ? COLORS.success : COLORS.danger,
+                      background: p.isLibrary 
+                        ? (p.isLostAndFound 
+                            ? (p.claimed ? "#fde8e8" : "#d4f4e0") 
+                            : (p.available ? "#d4f4e0" : "#fde8e8"))
+                        : (p.status === "active" ? "#d4f4e0" : "#fde8e8"),
+                      color: p.isLibrary 
+                        ? (p.isLostAndFound 
+                            ? (p.claimed ? COLORS.danger : COLORS.success) 
+                            : (p.available ? COLORS.success : COLORS.danger))
+                        : (p.status === "active" ? COLORS.success : COLORS.danger),
                     }}>
-                      {p.status === "active" ? "متاح" : "مُباع"}
+                      {p.isLibrary 
+                        ? (p.isLostAndFound 
+                            ? (p.claimed ? "تم الاسترداد" : "مفقود الآن") 
+                            : (p.available ? "متاح" : "مستعار")) 
+                        : (p.status === "active" ? "متاح" : "مُباع")}
                     </div>
                   </div>
                 </div>

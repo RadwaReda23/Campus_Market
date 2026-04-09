@@ -276,27 +276,55 @@ export default function LibraryPage({ onStartChat }) {
     fetch();
   }, []);
 
-  // استعارة عنصر
-  const handleBorrow = async (item) => {
+  // تغيير حالة العنصر التدويرية (متاح/مستعار) من قِبل المالك
+  const handleToggleAvailability = async (item) => {
     try {
-      await updateDoc(doc(db, "library", item.id), {
-        available: false,
-        borrower: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
-      });
-      setLibraryItems(prev => prev.map(i =>
-        i.id === item.id
-          ? { ...i, available: false, borrower: auth.currentUser?.displayName || auth.currentUser?.email }
-          : i
-      ));
+      if (item.available) {
+        if(!window.confirm("تحويل العنصر لـ مستعار؟ (إخفاءه من المتاح)")) return;
+        await updateDoc(doc(db, "library", item.id), {
+          available: false,
+          borrower: "مجهول (خارج التطبيق)",
+          borrowerId: "manual",
+        });
+        setLibraryItems(prev => prev.map(i =>
+          i.id === item.id
+            ? { ...i, available: false, borrower: "مجهول (خارج التطبيق)", borrowerId: "manual" }
+            : i
+        ));
+      } else {
+        if(!window.confirm("هل تأكدت من استلام العنصر وجعله متاحاً من جديد؟")) return;
+        await updateDoc(doc(db, "library", item.id), {
+          available: true,
+          borrower: null,
+          borrowerId: null,
+          returnDate: null,
+          durationType: null
+        });
+        setLibraryItems(prev => prev.map(i =>
+          i.id === item.id
+            ? { ...i, available: true, borrower: null, borrowerId: null, returnDate: null, durationType: null }
+            : i
+        ));
+      }
     } catch (err) { console.error(err); alert("حصل خطأ ❌"); }
   };
 
-  // المطالبة بمفقود
-  const handleClaim = async (item) => {
+  // ✅ تغيير حالة المفقود (مسترد/مفقود) - للمكتشف فقط
+  const handleToggleClaimed = async (item) => {
     try {
-      await updateDoc(doc(db, "lostFound", item.id), { claimed: true });
-      setLostItems(prev => prev.map(i => i.id === item.id ? { ...i, claimed: true } : i));
-    } catch (err) { console.error(err); alert("حصل خطأ ❌"); }
+      const newStatus = !item.claimed;
+      const confirmMsg = newStatus 
+        ? "هل تم استرداد هذا المفقود بالفعل؟" 
+        : "إعادة الحالة إلى 'مفقود'؟";
+        
+      if (!window.confirm(confirmMsg)) return;
+
+      await updateDoc(doc(db, "lostFound", item.id), { claimed: newStatus });
+      setLostItems(prev => prev.map(i => i.id === item.id ? { ...i, claimed: newStatus } : i));
+    } catch (err) {
+      console.error(err);
+      alert("حصل خطأ ❌");
+    }
   };
 
   return (
@@ -370,31 +398,43 @@ export default function LibraryPage({ onStartChat }) {
                       <div className={`lib-status ${item.available ? "available" : "unavailable"}`} style={{ fontSize: 11, marginBottom: 8 }}>
                         {item.available ? "متاح" : `مستعار بواسطة: ${item.borrower}`}
                       </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
-                        <button
-                          className={`borrow-btn ${item.available ? "btn-primary" : "btn-disabled"}`}
-                          disabled={!item.available}
-                          onClick={() => item.available && handleBorrow(item)}
-                          style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: item.available ? "pointer" : "not-allowed", fontFamily: "'Cairo', sans-serif", fontSize: 12, fontWeight: 700 }}
-                        >
-                          {item.available ? "استعر الآن" : "غير متاح"}
-                        </button>
-                        {item.addedById && auth.currentUser?.uid !== item.addedById && (
-                          <button
-                            onClick={() => onStartChat && onStartChat({
-                              id: item.id,
-                              title: item.title,
-                              sellerId: item.addedById,
-                              seller: item.addedBy
-                            })}
-                            style={{
-                              padding: "8px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
-                              background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
-                              cursor: "pointer", color: COLORS.primary, fontWeight: 600
-                            }}>
-                            💬 تواصل
-                          </button>
-                        )}
+                      <div className="product-meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+                        <div>
+                          <div className="product-seller">{item.addedBy || "مكتبة الكلية"}</div>
+                          <span className="seller-type type-student" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, fontWeight: 700 }}>عضو</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          {auth.currentUser?.uid === item.addedById ? (
+                            <button
+                              className="borrow-btn"
+                              onClick={() => handleToggleAvailability(item)}
+                              style={{ 
+                                padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
+                                fontFamily: "'Cairo', sans-serif", fontSize: 10, fontWeight: 700, 
+                                background: item.available ? COLORS.danger : COLORS.success, color: "white" 
+                              }}
+                            >
+                              {item.available ? "🔴 تحويل لمستعار" : "✅ إنهاء الاستعارة"}
+                            </button>
+                          ) : null}
+                          {auth.currentUser?.uid !== item.addedById && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onStartChat && onStartChat({
+                                id: item.id,
+                                title: item.title,
+                                sellerId: item.addedById || "unknown",
+                                seller: item.addedBy || "مجهول",
+                                isLibrary: true
+                              });}}
+                              style={{
+                                padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                                background: COLORS.primary, color: "white", fontSize: 11, fontFamily: "'Cairo', sans-serif",
+                                cursor: "pointer", fontWeight: 700
+                              }}>
+                              💬 تواصل
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -443,31 +483,42 @@ export default function LibraryPage({ onStartChat }) {
                         <span className="lost-tag" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 6, background: COLORS.light, color: COLORS.muted }}>📍 {item.location}</span>
                         <span className="lost-tag" style={{ fontSize: 10, padding: "2px 6px", borderRadius: 6, background: COLORS.light, color: COLORS.muted }}>🕐 {item.date}</span>
                       </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <button
-                          className={`borrow-btn ${!item.claimed ? "btn-primary" : "btn-disabled"}`}
-                          disabled={item.claimed}
-                          onClick={() => !item.claimed && handleClaim(item)}
-                          style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", cursor: !item.claimed ? "pointer" : "not-allowed", fontFamily: "'Cairo', sans-serif", fontSize: 12, fontWeight: 700 }}
-                        >
-                          {item.claimed ? "مُسترد" : "هذا ملكي 🙋"}
-                        </button>
-                        {item.finderId && auth.currentUser?.uid !== item.finderId && (
-                          <button
-                            onClick={() => onStartChat && onStartChat({
-                              id: item.id,
-                              title: item.title,
-                              sellerId: item.finderId,
-                              seller: item.finder
-                            })}
-                            style={{
-                              padding: "8px 14px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
-                              background: "white", fontSize: 12, fontFamily: "'Cairo', sans-serif",
-                              cursor: "pointer", color: COLORS.primary, fontWeight: 600
-                            }}>
-                            💬 تواصل
-                          </button>
-                        )}
+                      <div className="product-meta" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
+                        <div>
+                          <div className="product-seller">{item.finder || "مجهول"}</div>
+                          <span className="seller-type type-grad" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, fontWeight: 700 }}>باحث</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          {auth.currentUser?.uid === item.finderId && (
+                            <button
+                              className="borrow-btn"
+                              onClick={() => handleToggleClaimed(item)}
+                              style={{ 
+                                padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
+                                fontFamily: "'Cairo', sans-serif", fontSize: 11, fontWeight: 700,
+                                background: item.claimed ? COLORS.success : COLORS.danger, color: "white"
+                              }}
+                            >
+                              {item.claimed ? "✅ تم الاسترداد" : "🔴 تحديد كمُسترد"}
+                            </button>
+                          )}
+                          {auth.currentUser?.uid !== item.finderId && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onStartChat && onStartChat({
+                                id: item.id,
+                                title: item.title,
+                                sellerId: item.finderId || "unknown",
+                                seller: item.finder || "مجهول"
+                              });}}
+                              style={{
+                                padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
+                                background: COLORS.primary, color: "white", fontSize: 11, fontFamily: "'Cairo', sans-serif",
+                                cursor: "pointer", fontWeight: 700
+                              }}>
+                              💬 تواصل
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
