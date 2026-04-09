@@ -38,7 +38,7 @@ export default function ProductsScreen() {
       })) as Product[];
       setProducts(list);
     } catch (err) {
-      console.log(err);
+      console.log("Fetch error:", err);
     }
   };
 
@@ -58,32 +58,53 @@ export default function ProductsScreen() {
 
     if (!result.canceled) {
       const picked = result.assets[0];
+      console.log("Picked image:", picked); // ✅ Debug
       setImage(picked);
     }
   };
 
+  // ✅ الفنكشن بعد التصحيح الكامل
   const uploadToCloudinary = async (pickedImage: any) => {
     const data = new FormData();
 
-    data.append("file", {
+    const file = {
       uri: pickedImage.uri,
-      type: pickedImage.type || "image/jpeg",
-      name: pickedImage.uri.split("/").pop() || `upload.jpg`,
-    } as any);
+      type: 'image/jpeg',
+      name: 'upload.jpg',
+    };
 
+    data.append("file", file as any);
     data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
-      method: 'POST',
-      body: data,
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    try {
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: "POST",
+          body: data,
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
 
-    const result = await res.json();
-    return result.secure_url;
+      const result = await res.json();
+      console.log("Cloudinary response:", result); // ✅ Debug مهم
+
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+
+      if (!result.secure_url) {
+        throw new Error("فشل رفع الصورة");
+      }
+
+      return result.secure_url;
+
+    } catch (error) {
+      console.log("Upload error:", error);
+      throw error;
+    }
   };
 
   const handleAddProduct = async () => {
@@ -93,6 +114,7 @@ export default function ProductsScreen() {
     }
 
     setLoading(true);
+
     try {
       const uploadedUrl = await uploadToCloudinary(image);
 
@@ -108,12 +130,15 @@ export default function ProductsScreen() {
       });
 
       Alert.alert("تم ✅", "تم إضافة المنتج بنجاح");
+
       setForm({ title: '', price: '', category: 'كتب' });
       setImage(null);
+
       fetchProducts();
+
     } catch (err) {
-      console.log(err);
-      Alert.alert("خطأ", "فشل الرفع، تأكد من إعدادات Cloudinary");
+      console.log("Add product error:", err);
+      Alert.alert("خطأ", "فشل الرفع، راجعي Cloudinary أو الإنترنت");
     } finally {
       setLoading(false);
     }
@@ -131,6 +156,7 @@ export default function ProductsScreen() {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.label}>صورة المنتج</Text>
+
       <TouchableOpacity style={styles.imageBox} onPress={pickImage}>
         {image ? (
           <Image source={{ uri: image.uri }} style={styles.image} />
@@ -159,15 +185,18 @@ export default function ProductsScreen() {
         onPress={handleAddProduct}
         disabled={loading}
       >
-        {loading ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>إضافة المنتج</Text>}
+        {loading 
+          ? <ActivityIndicator color="white" /> 
+          : <Text style={styles.btnText}>إضافة المنتج</Text>
+        }
       </TouchableOpacity>
 
       <Text style={[styles.label, { marginTop: 30 }]}>المنتجات الحالية</Text>
+
       <FlatList
         data={products}
         keyExtractor={item => item.id}
         renderItem={renderProduct}
-        horizontal={false}
         numColumns={2}
         contentContainerStyle={{ paddingBottom: 100 }}
       />
@@ -178,6 +207,7 @@ export default function ProductsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 20, backgroundColor: 'white' },
   label: { fontSize: 16, fontWeight: 'bold', marginBottom: 10, marginTop: 20 },
+
   imageBox: {
     width: '100%',
     height: 200,
@@ -190,7 +220,9 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     overflow: 'hidden'
   },
+
   image: { width: '100%', height: '100%' },
+
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
@@ -199,6 +231,7 @@ const styles = StyleSheet.create({
     marginTop: 15,
     textAlign: 'right'
   },
+
   btn: {
     backgroundColor: '#1a3a2a',
     padding: 18,
@@ -206,7 +239,9 @@ const styles = StyleSheet.create({
     marginTop: 30,
     alignItems: 'center'
   },
+
   btnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
+
   card: {
     width: '47%',
     backgroundColor: '#fff',
@@ -217,8 +252,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ddd'
   },
+
   cardImage: { width: '100%', height: 120, borderRadius: 10 },
+
   cardTitle: { fontWeight: 'bold', marginTop: 8 },
+
   cardPrice: { color: '#c8a84b', marginTop: 4 },
+
   cardSeller: { fontSize: 10, marginTop: 2 }
 });

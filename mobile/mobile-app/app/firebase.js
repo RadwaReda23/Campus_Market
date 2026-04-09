@@ -1,4 +1,4 @@
-import{ getStorage }from "firebase/storage"
+import { getStorage } from "firebase/storage";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
@@ -12,8 +12,13 @@ const firebaseConfig = {
   appId: "1:668442069375:web:acf5aa861a3d769cc7b24a",
 };
 
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
-export const db = getFirestore(app); // 👈 مهم
-export const storage =getStorage(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app);
+
+// مهم عشان Expo Router
+export default function Firebase() {
+  return null;
+}

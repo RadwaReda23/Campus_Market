@@ -2,8 +2,9 @@ import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
 import { auth } from "./firebase";
 import { sendPasswordResetEmail } from "firebase/auth";
+import { router } from "expo-router";
 
-export default function ForgetPassword({ navigation }) {
+export default function ForgetPassword() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [success, setSuccess] = useState(false);
@@ -21,8 +22,7 @@ export default function ForgetPassword({ navigation }) {
       await sendPasswordResetEmail(auth, email.trim());
 
       setSuccess(true);
-      setMessage("Password reset email sent! Check your inbox (or spam).");
-
+      setMessage("Password reset email sent! Check your inbox.");
     } catch (err) {
       if (err.code === "auth/user-not-found") {
         setMessage("Email not found");
@@ -58,8 +58,9 @@ export default function ForgetPassword({ navigation }) {
           <Text style={styles.buttonText}>Reset Password</Text>
         </TouchableOpacity>
 
+        {/* Back to Login */}
         <TouchableOpacity
-          onPress={() => navigation.navigate("Login")}
+          onPress={() => router.push("/login")}
           style={{ marginTop: 15 }}
         >
           <Text style={styles.linkText}>Back to Login</Text>
