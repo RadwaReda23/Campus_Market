@@ -9,7 +9,6 @@ import {
   StyleSheet,
   Image,
   ActivityIndicator,
-  I18nManager,
 } from "react-native";
 
 import {
@@ -26,8 +25,6 @@ import {
 
 import { auth, db } from "../firebase";
 
-I18nManager.forceRTL(true); // 🔥 Arabic UI
-
 export default function MessagesScreen() {
   const user = auth.currentUser;
 
@@ -39,17 +36,30 @@ export default function MessagesScreen() {
   const [loading, setLoading] = useState(true);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
 
-  /* ================= LOAD PRODUCTS ================= */
+  /* ================= GET COLLECTION ================= */
+  const getCollectionName = (item: any) => {
+    return item?.type === "lost" ? "lost" : "library";
+  };
+
+  /* ================= LOAD ITEMS ================= */
   useEffect(() => {
     const load = async () => {
-      const snap = await getDocs(collection(db, "library"));
+      const libSnap = await getDocs(collection(db, "library"));
+      const lostSnap = await getDocs(collection(db, "lost"));
 
-      const data = snap.docs.map((d) => ({
+      const libData = libSnap.docs.map((d) => ({
         id: d.id,
+        type: "library",
         ...d.data(),
       }));
 
-      setItems(data);
+      const lostData = lostSnap.docs.map((d) => ({
+        id: d.id,
+        type: "lost",
+        ...d.data(),
+      }));
+
+      setItems([...libData, ...lostData]);
       setLoading(false);
     };
 
@@ -64,7 +74,7 @@ export default function MessagesScreen() {
 
     items.forEach((item) => {
       const q = query(
-        collection(db, "library", item.id, "messages"),
+        collection(db, getCollectionName(item), item.id, "messages"),
         orderBy("createdAt", "asc")
       );
 
@@ -87,21 +97,24 @@ export default function MessagesScreen() {
   }, [items]);
 
   /* ================= OPEN CHAT ================= */
-  const openChatBox = async (item: any) => {
+  const openChatBox = (item: any) => {
     setSelectedItem(item);
     setOpenChat(true);
-    markAsRead(item.id);
+    markAsRead(item, item.id);
   };
 
-  /* ================= MARK AS READ ================= */
-  const markAsRead = async (itemId: string) => {
+  /* ================= MARK AS READ (FIXED) ================= */
+  const markAsRead = async (item: any, itemId: string) => {
     const msgs = messagesMap[itemId] || [];
 
     msgs.forEach(async (m: any) => {
       if (!m.readBy?.includes(user?.email)) {
-        await updateDoc(doc(db, "library", itemId, "messages", m.id), {
-          readBy: arrayUnion(user?.email),
-        });
+        await updateDoc(
+          doc(db, getCollectionName(item), itemId, "messages", m.id),
+          {
+            readBy: arrayUnion(user?.email),
+          }
+        );
       }
     });
   };
@@ -110,12 +123,22 @@ export default function MessagesScreen() {
   const sendMessage = async () => {
     if (!text.trim() || !selectedItem || !user) return;
 
-    await addDoc(collection(db, "library", selectedItem.id, "messages"), {
-      text: text.trim(),
-      sender: user.email,
-      createdAt: new Date(),
-      readBy: [user.email],
-    });
+    await addDoc(
+      collection(
+        db,
+        getCollectionName(selectedItem),
+        selectedItem.id,
+        "messages"
+      ),
+      {
+        text: text.trim(),
+        senderId: user.uid,
+        senderEmail: user.email,
+        senderName: user.displayName || user.email,
+        createdAt: new Date(),
+        readBy: [user.email],
+      }
+    );
 
     setText("");
   };
@@ -128,9 +151,10 @@ export default function MessagesScreen() {
 
   const getUnreadCount = (id: string) => {
     const msgs = messagesMap[id] || [];
+
     return msgs.filter(
       (m: any) =>
-        m.sender !== user?.email &&
+        m.senderId !== user?.uid &&
         !m.readBy?.includes(user?.email)
     ).length;
   };
@@ -138,9 +162,7 @@ export default function MessagesScreen() {
   const formatTime = (date: any) => {
     if (!date) return "";
 
-    const d = date?.toDate
-      ? date.toDate()
-      : new Date(date);
+    const d = date?.toDate ? date.toDate() : new Date(date);
 
     return d.toLocaleTimeString([], {
       hour: "2-digit",
@@ -148,13 +170,20 @@ export default function MessagesScreen() {
     });
   };
 
-  /* ================= SORT CHAT (LAST MESSAGE FIRST) ================= */
+  /* ================= SORT FIXED ================= */
   const sortedItems = [...items].sort((a, b) => {
-    const aLast = getLastMessage(a.id)?.createdAt;
-    const bLast = getLastMessage(b.id)?.createdAt;
+    const aMsg = getLastMessage(a.id);
+    const bMsg = getLastMessage(b.id);
 
-    const aTime = aLast?.toDate ? aLast.toDate().getTime() : 0;
-    const bTime = bLast?.toDate ? bLast.toDate().getTime() : 0;
+    const aTime =
+      aMsg?.createdAt?.seconds ||
+      aMsg?.createdAt?.toDate?.()?.getTime?.() ||
+      0;
+
+    const bTime =
+      bMsg?.createdAt?.seconds ||
+      bMsg?.createdAt?.toDate?.()?.getTime?.() ||
+      0;
 
     return bTime - aTime;
   });
@@ -197,8 +226,6 @@ export default function MessagesScreen() {
                 style={styles.chatItem}
                 onPress={() => openChatBox(item)}
               >
-
-                {/* IMAGE + NAME */}
                 <Image
                   source={{ uri: item.imageURL }}
                   style={styles.img}
@@ -212,7 +239,6 @@ export default function MessagesScreen() {
                   </Text>
                 </View>
 
-                {/* TIME + BADGE */}
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={styles.time}>
                     {formatTime(last?.createdAt)}
@@ -224,7 +250,6 @@ export default function MessagesScreen() {
                     </View>
                   )}
                 </View>
-
               </TouchableOpacity>
             );
           }}
@@ -245,11 +270,12 @@ export default function MessagesScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* MESSAGES */}
           <FlatList
             data={messagesMap[selectedItem?.id] || []}
             keyExtractor={(i) => i.id}
             renderItem={({ item }) => {
-              const isMe = item.sender === user?.email;
+              const isMe = item.senderId === user?.uid;
 
               return (
                 <View
@@ -260,6 +286,10 @@ export default function MessagesScreen() {
                 >
                   <Text style={{ color: "white" }}>
                     {item.text}
+                  </Text>
+
+                  <Text style={styles.sender}>
+                    {item.senderName || item.senderEmail}
                   </Text>
                 </View>
               );
@@ -285,12 +315,11 @@ export default function MessagesScreen() {
 
         </View>
       </Modal>
-
     </View>
   );
 }
 
-/* ================= STYLE ================= */
+/* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f0e8" },
@@ -328,9 +357,7 @@ const styles = StyleSheet.create({
   },
 
   title: { fontWeight: "bold" },
-
   last: { fontSize: 12, color: "#777" },
-
   time: { fontSize: 10, color: "#999" },
 
   badge: {
@@ -353,17 +380,16 @@ const styles = StyleSheet.create({
     padding: 10,
     margin: 5,
     borderRadius: 10,
-    maxWidth: "70%",
-    alignSelf: "flex-end",
+    maxWidth: "75%",
   },
 
-  me: {
-    backgroundColor: "#1a3a2a",
-  },
+  me: { backgroundColor: "#1a3a2a", alignSelf: "flex-end" },
+  other: { backgroundColor: "#888", alignSelf: "flex-start" },
 
-  other: {
-    backgroundColor: "#888",
-    alignSelf: "flex-start",
+  sender: {
+    fontSize: 10,
+    color: "#ddd",
+    marginTop: 3,
   },
 
   inputRow: {
