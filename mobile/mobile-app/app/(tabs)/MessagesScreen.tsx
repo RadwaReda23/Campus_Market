@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Image,
   ActivityIndicator,
+  I18nManager,
 } from "react-native";
 
 import {
@@ -25,19 +26,20 @@ import {
 
 import { auth, db } from "../firebase";
 
+I18nManager.forceRTL(true); // 🔥 Arabic UI
+
 export default function MessagesScreen() {
   const user = auth.currentUser;
 
   const [items, setItems] = useState<any[]>([]);
   const [messagesMap, setMessagesMap] = useState<any>({});
-  const [messages, setMessages] = useState<any[]>([]);
-  const [openChat, setOpenChat] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [openChat, setOpenChat] = useState(false);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
 
-  // ===== LOAD ITEMS =====
+  /* ================= LOAD PRODUCTS ================= */
   useEffect(() => {
     const load = async () => {
       const snap = await getDocs(collection(db, "library"));
@@ -54,8 +56,10 @@ export default function MessagesScreen() {
     load();
   }, []);
 
-  // ===== REALTIME لكل الشاتات =====
+  /* ================= REALTIME MESSAGES ================= */
   useEffect(() => {
+    if (!items.length) return;
+
     const unsubscribers: any[] = [];
 
     items.forEach((item) => {
@@ -82,53 +86,44 @@ export default function MessagesScreen() {
     return () => unsubscribers.forEach((u) => u());
   }, [items]);
 
-  // ===== OPEN CHAT =====
-  const openChatBox = (item: any) => {
+  /* ================= OPEN CHAT ================= */
+  const openChatBox = async (item: any) => {
     setSelectedItem(item);
     setOpenChat(true);
-
-    setMessages(messagesMap[item.id] || []);
-
     markAsRead(item.id);
   };
 
-  // ===== MARK AS READ =====
+  /* ================= MARK AS READ ================= */
   const markAsRead = async (itemId: string) => {
     const msgs = messagesMap[itemId] || [];
 
     msgs.forEach(async (m: any) => {
       if (!m.readBy?.includes(user?.email)) {
-        await updateDoc(
-          doc(db, "library", itemId, "messages", m.id),
-          {
-            readBy: arrayUnion(user?.email),
-          }
-        );
+        await updateDoc(doc(db, "library", itemId, "messages", m.id), {
+          readBy: arrayUnion(user?.email),
+        });
       }
     });
   };
 
-  // ===== SEND =====
+  /* ================= SEND MESSAGE ================= */
   const sendMessage = async () => {
     if (!text.trim() || !selectedItem || !user) return;
 
-    await addDoc(
-      collection(db, "library", selectedItem.id, "messages"),
-      {
-        text: text.trim(),
-        sender: user.email,
-        createdAt: new Date(),
-        readBy: [user.email],
-      }
-    );
+    await addDoc(collection(db, "library", selectedItem.id, "messages"), {
+      text: text.trim(),
+      sender: user.email,
+      createdAt: new Date(),
+      readBy: [user.email],
+    });
 
     setText("");
   };
 
-  // ===== HELPERS =====
+  /* ================= HELPERS ================= */
   const getLastMessage = (id: string) => {
-    const msgs = messagesMap[id];
-    return msgs?.length ? msgs[msgs.length - 1] : null;
+    const msgs = messagesMap[id] || [];
+    return msgs.length ? msgs[msgs.length - 1] : null;
   };
 
   const getUnreadCount = (id: string) => {
@@ -145,8 +140,6 @@ export default function MessagesScreen() {
 
     const d = date?.toDate
       ? date.toDate()
-      : date?.seconds
-      ? new Date(date.seconds * 1000)
       : new Date(date);
 
     return d.toLocaleTimeString([], {
@@ -155,23 +148,35 @@ export default function MessagesScreen() {
     });
   };
 
-  const filteredItems = showUnreadOnly
-    ? items.filter((i) => getUnreadCount(i.id) > 0)
-    : items;
+  /* ================= SORT CHAT (LAST MESSAGE FIRST) ================= */
+  const sortedItems = [...items].sort((a, b) => {
+    const aLast = getLastMessage(a.id)?.createdAt;
+    const bLast = getLastMessage(b.id)?.createdAt;
 
+    const aTime = aLast?.toDate ? aLast.toDate().getTime() : 0;
+    const bTime = bLast?.toDate ? bLast.toDate().getTime() : 0;
+
+    return bTime - aTime;
+  });
+
+  const filteredItems = showUnreadOnly
+    ? sortedItems.filter((i) => getUnreadCount(i.id) > 0)
+    : sortedItems;
+
+  /* ================= UI ================= */
   return (
     <View style={styles.container}>
 
       {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.headerText}>💬 Messages</Text>
+        <Text style={styles.headerText}>📩 الرسائل</Text>
 
         <TouchableOpacity
           onPress={() => setShowUnreadOnly(!showUnreadOnly)}
-          style={styles.filterBtn}
+          style={styles.btn}
         >
           <Text style={{ color: "white" }}>
-            {showUnreadOnly ? "All" : "Unread"}
+            {showUnreadOnly ? "الكل" : "غير مقروء"}
           </Text>
         </TouchableOpacity>
       </View>
@@ -184,7 +189,7 @@ export default function MessagesScreen() {
           data={filteredItems}
           keyExtractor={(i) => i.id}
           renderItem={({ item }) => {
-            const lastMsg = getLastMessage(item.id);
+            const last = getLastMessage(item.id);
             const unread = getUnreadCount(item.id);
 
             return (
@@ -192,6 +197,8 @@ export default function MessagesScreen() {
                 style={styles.chatItem}
                 onPress={() => openChatBox(item)}
               >
+
+                {/* IMAGE + NAME */}
                 <Image
                   source={{ uri: item.imageURL }}
                   style={styles.img}
@@ -200,31 +207,31 @@ export default function MessagesScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.title}>{item.title}</Text>
 
-                  <Text style={styles.last}>
-                    {lastMsg?.text || "No messages"}
+                  <Text style={styles.last} numberOfLines={1}>
+                    {last?.text || "لا توجد رسائل"}
                   </Text>
                 </View>
 
+                {/* TIME + BADGE */}
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={styles.time}>
-                    {formatTime(lastMsg?.createdAt)}
+                    {formatTime(last?.createdAt)}
                   </Text>
 
                   {unread > 0 && (
                     <View style={styles.badge}>
-                      <Text style={styles.badgeText}>
-                        {unread}
-                      </Text>
+                      <Text style={{ color: "white" }}>{unread}</Text>
                     </View>
                   )}
                 </View>
+
               </TouchableOpacity>
             );
           }}
         />
       )}
 
-      {/* CHAT */}
+      {/* CHAT MODAL */}
       <Modal visible={openChat} animationType="slide">
         <View style={styles.chatBox}>
 
@@ -239,7 +246,7 @@ export default function MessagesScreen() {
           </View>
 
           <FlatList
-            data={messages}
+            data={messagesMap[selectedItem?.id] || []}
             keyExtractor={(i) => i.id}
             renderItem={({ item }) => {
               const isMe = item.sender === user?.email;
@@ -259,28 +266,31 @@ export default function MessagesScreen() {
             }}
           />
 
+          {/* INPUT */}
           <View style={styles.inputRow}>
             <TextInput
               value={text}
               onChangeText={setText}
               style={styles.input}
+              placeholder="اكتب رسالة..."
             />
 
             <TouchableOpacity
               onPress={sendMessage}
               style={styles.sendBtn}
             >
-              <Text style={{ color: "white" }}>Send</Text>
+              <Text style={{ color: "white" }}>إرسال</Text>
             </TouchableOpacity>
           </View>
 
         </View>
       </Modal>
+
     </View>
   );
 }
 
-/* ================= STYLES ================= */
+/* ================= STYLE ================= */
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f0e8" },
@@ -288,13 +298,13 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: "#1a3a2a",
     padding: 15,
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     justifyContent: "space-between",
   },
 
   headerText: { color: "white", fontWeight: "bold" },
 
-  filterBtn: {
+  btn: {
     borderWidth: 1,
     borderColor: "white",
     padding: 5,
@@ -302,10 +312,10 @@ const styles = StyleSheet.create({
   },
 
   chatItem: {
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     padding: 10,
-    backgroundColor: "white",
     margin: 5,
+    backgroundColor: "white",
     borderRadius: 10,
     alignItems: "center",
   },
@@ -314,7 +324,7 @@ const styles = StyleSheet.create({
     width: 45,
     height: 45,
     borderRadius: 10,
-    marginRight: 10,
+    marginLeft: 10,
   },
 
   title: { fontWeight: "bold" },
@@ -330,14 +340,12 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  badgeText: { color: "white", fontSize: 10 },
-
   chatBox: { flex: 1 },
 
   chatHeader: {
     backgroundColor: "#1a3a2a",
     padding: 15,
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     justifyContent: "space-between",
   },
 
@@ -346,11 +354,11 @@ const styles = StyleSheet.create({
     margin: 5,
     borderRadius: 10,
     maxWidth: "70%",
+    alignSelf: "flex-end",
   },
 
   me: {
     backgroundColor: "#1a3a2a",
-    alignSelf: "flex-end",
   },
 
   other: {
@@ -359,7 +367,7 @@ const styles = StyleSheet.create({
   },
 
   inputRow: {
-    flexDirection: "row",
+    flexDirection: "row-reverse",
     padding: 10,
   },
 
@@ -373,7 +381,7 @@ const styles = StyleSheet.create({
   sendBtn: {
     backgroundColor: "#1a3a2a",
     padding: 10,
-    marginLeft: 5,
+    marginRight: 5,
     borderRadius: 10,
   },
 });
