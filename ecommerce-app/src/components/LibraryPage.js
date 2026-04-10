@@ -1,16 +1,19 @@
 import { useState, useEffect, useRef } from "react";
 import { COLORS } from "../constants";
 import { db, auth } from "../firebase";
-import { collection, addDoc, getDocs, query, orderBy, updateDoc, doc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, updateDoc, doc, deleteDoc } from "firebase/firestore";
 
 const CLOUDINARY_CLOUD_NAME = "dgowyewii";
 const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
 
 // ─── Modal إضافة عنصر للمكتبة ──────────────────────────────────────────────────
-function AddLibraryModal({ onClose, onAdd }) {
-  const [form, setForm] = useState({ title: "", category: "ملابس" });
+function AddLibraryModal({ onClose, onAdd, editItem }) {
+  const [form, setForm] = useState({ 
+    title: editItem?.title || "", 
+    category: editItem?.category || "ملابس" 
+  });
   const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview, setImagePreview] = useState(editItem?.imageURL || null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef(null);
 
@@ -50,18 +53,25 @@ function AddLibraryModal({ onClose, onAdd }) {
       const item = {
         title: form.title,
         category: form.category,
-        image: imageURL || emojiMap[form.category] || "📦",
-        imageURL: imageURL,
-        available: true,
-        borrower: null,
+        image: imageURL || editItem?.imageURL || emojiMap[form.category] || "📦",
+        imageURL: imageURL || editItem?.imageURL || "",
+        available: editItem?.available ?? true,
+        borrower: editItem?.borrower || null,
         addedBy: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
         addedById: auth.currentUser?.uid,
-        createdAt: new Date(),
+        createdAt: editItem?.createdAt || new Date(),
       };
-      const docRef = await addDoc(collection(db, "library"), item);
-      onAdd({ id: docRef.id, ...item });
+      
+      if (editItem) {
+        await updateDoc(doc(db, "library", editItem.id), item);
+        onAdd({ id: editItem.id, ...item });
+        alert("تم تحديث العنصر ✅");
+      } else {
+        const docRef = await addDoc(collection(db, "library"), item);
+        onAdd({ id: docRef.id, ...item });
+        alert("تم إضافة العنصر ✅");
+      }
       onClose();
-      alert("تم إضافة العنصر ✅");
     } catch (err) {
       console.error(err);
       alert("حصل خطأ ❌");
@@ -74,7 +84,7 @@ function AddLibraryModal({ onClose, onAdd }) {
     <div style={modalOverlay}>
       <div style={modalBox}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h3 style={{ color: COLORS.primary, fontSize: 16 }}>📚 إضافة عنصر للمكتبة</h3>
+          <h3 style={{ color: COLORS.primary, fontSize: 16 }}>{editItem ? "✏️ تعديل عنصر" : "📚 إضافة عنصر للمكتبة"}</h3>
           <button onClick={onClose} style={closeBtn}>✕</button>
         </div>
 
@@ -113,7 +123,7 @@ function AddLibraryModal({ onClose, onAdd }) {
         </div>
 
         <button onClick={handleSubmit} disabled={loading} style={submitBtn(loading)}>
-          {loading ? "جاري الإضافة..." : "✅ إضافة العنصر"}
+          {loading ? "جاري الحفظ..." : (editItem ? "✅ حفظ التعديلات" : "✅ إضافة العنصر")}
         </button>
       </div>
     </div>
@@ -121,10 +131,14 @@ function AddLibraryModal({ onClose, onAdd }) {
 }
 
 // ─── Modal إضافة مفقود ─────────────────────────────────────────────────────────
-function AddLostModal({ onClose, onAdd }) {
-  const [form, setForm] = useState({ title: "", description: "", location: "" });
+function AddLostModal({ onClose, onAdd, editItem }) {
+  const [form, setForm] = useState({ 
+    title: editItem?.title || "", 
+    description: editItem?.description || "", 
+    location: editItem?.location || "" 
+  });
   const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview, setImagePreview] = useState(editItem?.imageURL || null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef(null);
 
@@ -164,16 +178,23 @@ function AddLostModal({ onClose, onAdd }) {
         location: form.location,
         finder: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
         finderId: auth.currentUser?.uid,
-        image: imageURL ? "" : "🔍",
-        imageURL: imageURL,
-        claimed: false,
-        date: "الآن",
-        createdAt: new Date(),
+        image: (imageURL || editItem?.imageURL) ? "" : "🔍",
+        imageURL: imageURL || editItem?.imageURL || "",
+        claimed: editItem?.claimed || false,
+        date: editItem?.date || "الآن",
+        createdAt: editItem?.createdAt || new Date(),
       };
-      const docRef = await addDoc(collection(db, "lostFound"), item);
-      onAdd({ id: docRef.id, ...item });
+      
+      if (editItem) {
+        await updateDoc(doc(db, "lostFound", editItem.id), item);
+        onAdd({ id: editItem.id, ...item });
+        alert("تم تحديث المفقود ✅");
+      } else {
+        const docRef = await addDoc(collection(db, "lostFound"), item);
+        onAdd({ id: docRef.id, ...item });
+        alert("تم إضافة المفقود ✅");
+      }
       onClose();
-      alert("تم إضافة المفقود ✅");
     } catch (err) {
       console.error(err);
       alert("حصل خطأ ❌");
@@ -186,7 +207,7 @@ function AddLostModal({ onClose, onAdd }) {
     <div style={modalOverlay}>
       <div style={modalBox}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h3 style={{ color: COLORS.primary, fontSize: 16 }}>🔍 إضافة مفقود</h3>
+          <h3 style={{ color: COLORS.primary, fontSize: 16 }}>{editItem ? "✏️ تعديل مفقود" : "🔍 إضافة مفقود"}</h3>
           <button onClick={onClose} style={closeBtn}>✕</button>
         </div>
 
@@ -229,7 +250,7 @@ function AddLostModal({ onClose, onAdd }) {
         </div>
 
         <button onClick={handleSubmit} disabled={loading} style={submitBtn(loading)}>
-          {loading ? "جاري الإضافة..." : "✅ إضافة المفقود"}
+          {loading ? "جاري الحفظ..." : (editItem ? "✅ حفظ التعديلات" : "✅ إضافة المفقود")}
         </button>
       </div>
     </div>
@@ -244,11 +265,13 @@ export default function LibraryPage({ onStartChat }) {
   const [libraryItems, setLibraryItems] = useState([]);
   const [loadingLibrary, setLoadingLibrary] = useState(true);
   const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [editingLibraryItem, setEditingLibraryItem] = useState(null);
 
   // Lost & Found state
   const [lostItems, setLostItems] = useState([]);
   const [loadingLost, setLoadingLost] = useState(true);
   const [showLostModal, setShowLostModal] = useState(false);
+  const [editingLostItem, setEditingLostItem] = useState(null);
 
   // جيب عناصر المكتبة من Firestore
   useEffect(() => {
@@ -327,18 +350,56 @@ export default function LibraryPage({ onStartChat }) {
     }
   };
 
+  const handleDeleteLibraryItem = async (id) => {
+    if (!window.confirm("هل أنت متأكد من حذف هذا العنصر من المكتبة؟")) return;
+    try {
+      await deleteDoc(doc(db, "library", id));
+      setLibraryItems(prev => prev.filter(i => i.id !== id));
+      alert("تم الحذف بنجاح");
+    } catch (err) {
+      console.error(err);
+      alert("فشل الحذف");
+    }
+  };
+
+  const handleDeleteLostItem = async (id) => {
+    if (!window.confirm("هل أنت متأكد من حذف هذا المفقود؟")) return;
+    try {
+      await deleteDoc(doc(db, "lostFound", id));
+      setLostItems(prev => prev.filter(i => i.id !== id));
+      alert("تم الحذف بنجاح");
+    } catch (err) {
+      console.error(err);
+      alert("فشل الحذف");
+    }
+  };
+
   return (
     <>
       {showLibraryModal && (
         <AddLibraryModal
-          onClose={() => setShowLibraryModal(false)}
-          onAdd={(item) => setLibraryItems(prev => [item, ...prev])}
+          onClose={() => { setShowLibraryModal(false); setEditingLibraryItem(null); }}
+          editItem={editingLibraryItem}
+          onAdd={(item) => {
+            if (editingLibraryItem) {
+              setLibraryItems(prev => prev.map(old => old.id === item.id ? item : old));
+            } else {
+              setLibraryItems(prev => [item, ...prev]);
+            }
+          }}
         />
       )}
       {showLostModal && (
         <AddLostModal
-          onClose={() => setShowLostModal(false)}
-          onAdd={(item) => setLostItems(prev => [item, ...prev])}
+          onClose={() => { setShowLostModal(false); setEditingLostItem(null); }}
+          editItem={editingLostItem}
+          onAdd={(item) => {
+            if (editingLostItem) {
+              setLostItems(prev => prev.map(old => old.id === item.id ? item : old));
+            } else {
+              setLostItems(prev => [item, ...prev]);
+            }
+          }}
         />
       )}
 
@@ -404,19 +465,23 @@ export default function LibraryPage({ onStartChat }) {
                           <span className="seller-type type-student" style={{ fontSize: 10, padding: "2px 7px", borderRadius: 10, fontWeight: 700 }}>عضو</span>
                         </div>
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          {auth.currentUser?.uid === item.addedById ? (
-                            <button
-                              className="borrow-btn"
-                              onClick={() => handleToggleAvailability(item)}
-                              style={{ 
-                                padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
-                                fontFamily: "'Cairo', sans-serif", fontSize: 10, fontWeight: 700, 
-                                background: item.available ? COLORS.danger : COLORS.success, color: "white" 
-                              }}
-                            >
-                              {item.available ? "🔴 تحويل لمستعار" : "✅ إنهاء الاستعارة"}
-                            </button>
-                          ) : null}
+                          {auth.currentUser?.uid === item.addedById && (
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                              <button
+                                className="borrow-btn"
+                                onClick={() => handleToggleAvailability(item)}
+                                style={{ 
+                                  padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
+                                  fontFamily: "'Cairo', sans-serif", fontSize: 10, fontWeight: 700, 
+                                  background: item.available ? COLORS.danger : COLORS.success, color: "white" 
+                                }}
+                              >
+                                {item.available ? "🔴 تحويل لمستعار" : "✅ إنهاء الاستعارة"}
+                              </button>
+                              <button onClick={() => { setEditingLibraryItem(item); setShowLibraryModal(true); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
+                              <button onClick={() => handleDeleteLibraryItem(item.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>🗑️</button>
+                            </div>
+                          )}
                           {auth.currentUser?.uid !== item.addedById && (
                             <button
                               onClick={(e) => { e.stopPropagation(); onStartChat && onStartChat({
@@ -424,6 +489,8 @@ export default function LibraryPage({ onStartChat }) {
                                 title: item.title,
                                 sellerId: item.addedById || "unknown",
                                 seller: item.addedBy || "مجهول",
+                                imageURL: item.imageURL,
+                                image: item.image,
                                 isLibrary: true
                               });}}
                               style={{
@@ -490,17 +557,21 @@ export default function LibraryPage({ onStartChat }) {
                         </div>
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           {auth.currentUser?.uid === item.finderId && (
-                            <button
-                              className="borrow-btn"
-                              onClick={() => handleToggleClaimed(item)}
-                              style={{ 
-                                padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
-                                fontFamily: "'Cairo', sans-serif", fontSize: 11, fontWeight: 700,
-                                background: item.claimed ? COLORS.success : COLORS.danger, color: "white"
-                              }}
-                            >
-                              {item.claimed ? "✅ تم الاسترداد" : "🔴 تحديد كمُسترد"}
-                            </button>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                              <button
+                                className="borrow-btn"
+                                onClick={() => handleToggleClaimed(item)}
+                                style={{ 
+                                  padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
+                                  fontFamily: "'Cairo', sans-serif", fontSize: 11, fontWeight: 700,
+                                  background: item.claimed ? COLORS.success : COLORS.danger, color: "white"
+                                }}
+                              >
+                                {item.claimed ? "✅ تم الاسترداد" : "🔴 تحديد كمُسترد"}
+                              </button>
+                              <button onClick={() => { setEditingLostItem(item); setShowLostModal(true); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
+                              <button onClick={() => handleDeleteLostItem(item.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>🗑️</button>
+                            </div>
                           )}
                           {auth.currentUser?.uid !== item.finderId && (
                             <button
@@ -508,7 +579,9 @@ export default function LibraryPage({ onStartChat }) {
                                 id: item.id,
                                 title: item.title,
                                 sellerId: item.finderId || "unknown",
-                                seller: item.finder || "مجهول"
+                                seller: item.finder || "مجهول",
+                                imageURL: item.imageURL,
+                                image: item.image
                               });}}
                               style={{
                                 padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,

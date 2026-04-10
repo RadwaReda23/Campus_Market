@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
-import { collection, addDoc, getDocs, query, orderBy, updateDoc, doc, onSnapshot, where } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, updateDoc, doc, onSnapshot, where, deleteDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 
 import { COLORS, FONTS, mockMessages, navItems } from "../constants";
@@ -66,12 +66,16 @@ function useSearch(searchQuery) {
 }
 
 // ─── Add Product Modal ─────────────────────────────────────────────────────────
-function AddProductModal({ onClose, onAdd }) {
+function AddProductModal({ onClose, onAdd, editProduct }) {
   const [form, setForm] = useState({
-    title: "", price: "", condition: "جيد", category: "كتب", sellerType: "طالب",
+    title: editProduct?.title || "", 
+    price: editProduct?.price || "", 
+    condition: editProduct?.condition || "جيد", 
+    category: editProduct?.category || "كتب", 
+    sellerType: editProduct?.sellerType || "طالب",
   });
   const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview, setImagePreview] = useState(editProduct?.imageURL || null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef(null);
 
@@ -116,18 +120,24 @@ function AddProductModal({ onClose, onAdd }) {
         sellerType: form.sellerType,
         seller: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
         sellerId: auth.currentUser?.uid,
-        imageURL: imageURL,
-        image: imageURL ? "" : "📦",
-        views: 0,
-        status: "active",
-        time: "الآن",
-        createdAt: new Date(),
+        imageURL: imageURL || editProduct?.imageURL || "",
+        image: (imageURL || editProduct?.imageURL) ? "" : "📦",
+        views: editProduct?.views || 0,
+        status: editProduct?.status || "active",
+        time: editProduct?.time || "الآن",
+        createdAt: editProduct?.createdAt || new Date(),
       };
 
-      const docRef = await addDoc(collection(db, "products"), product);
-      onAdd({ id: docRef.id, ...product });
+      if (editProduct) {
+        await updateDoc(doc(db, "products", editProduct.id), product);
+        onAdd({ id: editProduct.id, ...product });
+        alert("تم تحديث المنتج ✅");
+      } else {
+        const docRef = await addDoc(collection(db, "products"), product);
+        onAdd({ id: docRef.id, ...product });
+        alert("تم إضافة المنتج ✅");
+      }
       onClose();
-      alert("تم إضافة المنتج ✅");
     } catch (err) {
       console.error(err);
       alert("حصل خطأ ❌");
@@ -140,7 +150,7 @@ function AddProductModal({ onClose, onAdd }) {
     <div style={modalOverlay}>
       <div style={modalBox}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h3 style={{ color: COLORS.primary, fontSize: 17 }}>➕ إضافة منتج جديد</h3>
+          <h3 style={{ color: COLORS.primary, fontSize: 17 }}>{editProduct ? "✏️ تعديل المنتج" : "➕ إضافة منتج جديد"}</h3>
           <button onClick={onClose} style={closeBtn}>✕</button>
         </div>
 
@@ -204,7 +214,7 @@ function AddProductModal({ onClose, onAdd }) {
           cursor: loading ? "not-allowed" : "pointer",
           fontFamily: "'Cairo', sans-serif", marginTop: 8,
         }}>
-          {loading ? "جاري الإضافة..." : "✅ إضافة المنتج"}
+          {loading ? "جاري الحفظ..." : (editProduct ? "✅ حفظ التعديلات" : "✅ إضافة المنتج")}
         </button>
       </div>
     </div>
@@ -212,10 +222,14 @@ function AddProductModal({ onClose, onAdd }) {
 }
 
 // ─── Add Lost Modal ────────────────────────────────────────────────────────────
-function AddLostModal({ onClose, onAdd }) {
-  const [form, setForm] = useState({ title: "", description: "", location: "" });
+function AddLostModal({ onClose, onAdd, editItem }) {
+  const [form, setForm] = useState({ 
+    title: editItem?.title || "", 
+    description: editItem?.description || "", 
+    location: editItem?.location || "" 
+  });
   const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [imagePreview, setImagePreview] = useState(editItem?.imageURL || null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef(null);
 
@@ -251,16 +265,23 @@ function AddLostModal({ onClose, onAdd }) {
         location: form.location,
         finder: auth.currentUser?.displayName || auth.currentUser?.email || "مجهول",
         finderId: auth.currentUser?.uid,
-        image: imageURL ? "" : "🔍",
-        imageURL: imageURL,
-        claimed: false,
-        date: "الآن",
-        createdAt: new Date(),
+        image: (imageURL || editItem?.imageURL) ? "" : "🔍",
+        imageURL: imageURL || editItem?.imageURL || "",
+        claimed: editItem?.claimed || false,
+        date: editItem?.date || "الآن",
+        createdAt: editItem?.createdAt || new Date(),
       };
-      const docRef = await addDoc(collection(db, "lostFound"), item);
-      onAdd({ id: docRef.id, ...item });
+      
+      if (editItem) {
+        await updateDoc(doc(db, "lostFound", editItem.id), item);
+        onAdd({ id: editItem.id, ...item });
+        alert("تم تحديث المفقود ✅");
+      } else {
+        const docRef = await addDoc(collection(db, "lostFound"), item);
+        onAdd({ id: docRef.id, ...item });
+        alert("تم إضافة المفقود ✅");
+      }
       onClose();
-      alert("تم إضافة المفقود ✅");
     } catch (err) {
       console.error(err);
       alert("حصل خطأ ❌");
@@ -273,7 +294,7 @@ function AddLostModal({ onClose, onAdd }) {
     <div style={modalOverlay}>
       <div style={modalBox}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h3 style={{ color: COLORS.primary, fontSize: 16 }}>🔍 إضافة مفقود</h3>
+          <h3 style={{ color: COLORS.primary, fontSize: 16 }}>{editItem ? "✏️ تعديل مفقود" : "🔍 إضافة مفقود"}</h3>
           <button onClick={onClose} style={closeBtn}>✕</button>
         </div>
 
@@ -318,7 +339,7 @@ function AddLostModal({ onClose, onAdd }) {
           cursor: loading ? "not-allowed" : "pointer",
           fontFamily: "'Cairo', sans-serif", marginTop: 8,
         }}>
-          {loading ? "جاري الإضافة..." : "✅ إضافة المفقود"}
+          {loading ? "جاري الحفظ..." : (editItem ? "✅ حفظ التعديلات" : "✅ إضافة المفقود")}
         </button>
       </div>
     </div>
@@ -330,6 +351,7 @@ function ProductsPage({ searchQuery = "", onStartChat }) {
   const [activeFilter, setActiveFilter] = useState("الكل");
   const [products, setProducts] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
   const [loadingProducts, setLoadingProducts] = useState(true);
 
   const filters = ["الكل", "كتب", "معدات", "ملابس", "أدوات", "أخرى"];
@@ -363,12 +385,36 @@ function ProductsPage({ searchQuery = "", onStartChat }) {
       );
     });
 
+  const handleDeleteProduct = async (id) => {
+    if (!window.confirm("هل أنت متأكد من حذف هذا المنتج؟")) return;
+    try {
+      await deleteDoc(doc(db, "products", id));
+      setProducts(prev => prev.filter(p => p.id !== id));
+      alert("تم الحذف بنجاح");
+    } catch (err) {
+      console.error(err);
+      alert("فشل الحذف");
+    }
+  };
+
+  const handleEditProduct = (p) => {
+    setEditingProduct(p);
+    setShowModal(true);
+  };
+
   return (
     <>
       {showModal && (
         <AddProductModal
-          onClose={() => setShowModal(false)}
-          onAdd={(newProduct) => setProducts(prev => [newProduct, ...prev])}
+          onClose={() => { setShowModal(false); setEditingProduct(null); }}
+          editProduct={editingProduct}
+          onAdd={(p) => {
+            if (editingProduct) {
+              setProducts(prev => prev.map(old => old.id === p.id ? p : old));
+            } else {
+              setProducts(prev => [p, ...prev]);
+            }
+          }}
         />
       )}
 
@@ -443,7 +489,11 @@ function ProductsPage({ searchQuery = "", onStartChat }) {
                         cursor: "pointer", fontWeight: 700
                       }}>💬 تواصل</button>
                     ) : (
-                      <span>👁 {p.views}</span>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: COLORS.muted }}>👁 {p.views}</span>
+                        <button onClick={() => handleEditProduct(p)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
+                        <button onClick={() => handleDeleteProduct(p.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>🗑️</button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -461,6 +511,7 @@ function LostFoundPage({ onStartChat }) {
   const [lostItems, setLostItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
 
   // ✅ جيب المفقودات من Firestore
   useEffect(() => {
@@ -496,12 +547,36 @@ function LostFoundPage({ onStartChat }) {
     }
   };
 
+  const handleDeleteLost = async (id) => {
+    if (!window.confirm("هل أنت متأكد من حذف هذا المفقود؟")) return;
+    try {
+      await deleteDoc(doc(db, "lostFound", id));
+      setLostItems(prev => prev.filter(p => p.id !== id));
+      alert("تم الحذف بنجاح");
+    } catch (err) {
+      console.error(err);
+      alert("فشل الحذف");
+    }
+  };
+
+  const handleEditLost = (item) => {
+    setEditingItem(item);
+    setShowModal(true);
+  };
+
   return (
     <>
       {showModal && (
         <AddLostModal
-          onClose={() => setShowModal(false)}
-          onAdd={(item) => setLostItems(prev => [item, ...prev])}
+          onClose={() => { setShowModal(false); setEditingItem(null); }}
+          editItem={editingItem}
+          onAdd={(item) => {
+            if (editingItem) {
+              setLostItems(prev => prev.map(old => old.id === item.id ? item : old));
+            } else {
+              setLostItems(prev => [item, ...prev]);
+            }
+          }}
         />
       )}
 
@@ -544,17 +619,21 @@ function LostFoundPage({ onStartChat }) {
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     {auth.currentUser?.uid === item.finderId && (
-                      <button
-                        className="borrow-btn"
-                        onClick={() => handleToggleClaimed(item)}
-                        style={{ 
-                          padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
-                          fontFamily: "'Cairo', sans-serif", fontSize: 11, fontWeight: 700,
-                          background: item.claimed ? COLORS.success : COLORS.danger, color: "white"
-                        }}
-                      >
-                        {item.claimed ? "✅ تم الاسترداد" : "🔴 تحديد كمُسترد"}
-                      </button>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <button
+                          className="borrow-btn"
+                          onClick={() => handleToggleClaimed(item)}
+                          style={{ 
+                            padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
+                            fontFamily: "'Cairo', sans-serif", fontSize: 11, fontWeight: 700,
+                            background: item.claimed ? COLORS.success : COLORS.danger, color: "white"
+                          }}
+                        >
+                          {item.claimed ? "✅ تم الاسترداد" : "🔴 تحديد كمُسترد"}
+                        </button>
+                        <button onClick={() => handleEditLost(item)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
+                        <button onClick={() => handleDeleteLost(item.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>🗑️</button>
+                      </div>
                     )}
                     {auth.currentUser?.uid !== item.finderId && (
                       <button
@@ -562,7 +641,9 @@ function LostFoundPage({ onStartChat }) {
                           id: item.id,
                           title: item.title,
                           sellerId: item.finderId || "unknown",
-                          seller: item.finder || "مجهول"
+                          seller: item.finder || "مجهول",
+                          imageURL: item.imageURL,
+                          image: item.image
                         });}}
                         style={{
                           padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
@@ -634,7 +715,13 @@ function MessagesPage({ onOpenChat }) {
               className={`message-item ${isUnread ? "unread" : ""}`}
               onClick={() => onOpenChat({ conversationId: conv.id, ...conv })}
             >
-              <div className="msg-avatar">{otherUserName[0].toUpperCase()}</div>
+              <div className="msg-avatar" style={{ background: COLORS.light, overflow: "hidden" }}>
+                {conv.productImageURL ? (
+                  <img src={conv.productImageURL} alt={conv.productTitle} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <span style={{ fontSize: 20 }}>{conv.productImage || "📦"}</span>
+                )}
+              </div>
               <div className="msg-info">
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span className="msg-from">{otherUserName}</span>
@@ -808,6 +895,8 @@ export default function Dashboard({ user }) {
     setCurrentChat({
       productId: productData.id,
       productTitle: productData.title,
+      productImageURL: productData.imageURL,
+      productImage: productData.image,
       sellerId: productData.sellerId,
       sellerName: productData.seller,
       buyerId: auth.currentUser?.uid,
@@ -823,6 +912,8 @@ export default function Dashboard({ user }) {
       conversationId: convData.id,
       productId: convData.productId,
       productTitle: convData.productTitle,
+      productImageURL: convData.productImageURL,
+      productImage: convData.productImage,
       sellerId: convData.participants[1],
       buyerId: convData.participants[0],
       participantNames: convData.participantNames,

@@ -24,18 +24,51 @@ export default function ChatView({ chatData, onBack }) {
 
   useEffect(() => {
     // إعداد الـ Conversation Document إذا لم يكن موجوداً
+    // إعداد الـ Conversation Document إذا لم يكن موجوداً أو تحديث البيانات الناقصة
     const setupConversation = async () => {
       const convRef = doc(db, "conversations", convId);
       const convSnap = await getDoc(convRef);
+      
+      let finalProductImageURL = chatData.productImageURL || "";
+      let finalProductImage = chatData.productImage || "📦";
+      let finalProductTitle = chatData.productTitle;
+
+      // إذا كانت البيانات ناقصة، نحاول جلبها من مجموعة المنتجات الأصلية
+      if (!finalProductImageURL || !finalProductTitle) {
+        try {
+          // محاولة البحث في المجموعات الثلاث
+          const collections = ["products", "library", "lostFound"];
+          for (const colName of collections) {
+            const prodSnap = await getDoc(doc(db, colName, chatData.productId));
+            if (prodSnap.exists()) {
+              const pData = prodSnap.data();
+              finalProductImageURL = pData.imageURL || "";
+              finalProductImage = pData.image || (colName === "library" ? "📚" : colName === "lostFound" ? "🔍" : "📦");
+              if (!finalProductTitle) finalProductTitle = pData.title;
+              break;
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching product info for chat sync:", err);
+        }
+      }
+
+      const convData = {
+        participants: [currentUser.uid, chatData.sellerId],
+        participantNames: {
+          [currentUser.uid]: currentUser.displayName || currentUser.email,
+          [chatData.sellerId]: chatData.sellerName || "بائع"
+        },
+        productId: chatData.productId,
+        productTitle: finalProductTitle,
+        productImageURL: finalProductImageURL,
+        productImage: finalProductImage,
+        isLibrary: chatData.isLibrary || false
+      };
+
       if (!convSnap.exists()) {
         await setDoc(convRef, {
-          participants: [currentUser.uid, chatData.sellerId],
-          participantNames: {
-            [currentUser.uid]: currentUser.displayName || currentUser.email,
-            [chatData.sellerId]: chatData.sellerName || "بائع"
-          },
-          productId: chatData.productId,
-          productTitle: chatData.productTitle,
+          ...convData,
           lastMessage: "",
           lastMessageTime: serverTimestamp(),
           unreadCount: {
@@ -43,15 +76,23 @@ export default function ChatView({ chatData, onBack }) {
             [chatData.sellerId]: 0
           },
           createdAt: serverTimestamp(),
-          isLibrary: chatData.isLibrary || false
         });
       } else {
+        // تحديث البيانات في حالة كانت ناقصة (للمحادثات القديمة)
+        const existingData = convSnap.data();
+        const updates = {};
+        if (!existingData.productImageURL && finalProductImageURL) updates.productImageURL = finalProductImageURL;
+        if (!existingData.productImage && finalProductImage) updates.productImage = finalProductImage;
+        if (!existingData.productTitle && finalProductTitle) updates.productTitle = finalProductTitle;
+        
         // تصفير العداد عند فتح المحادثة
-        const unreadCount = convSnap.data().unreadCount || {};
+        const unreadCount = existingData.unreadCount || {};
         if (unreadCount[currentUser.uid] > 0) {
-          await updateDoc(convRef, {
-            [`unreadCount.${currentUser.uid}`]: 0
-          });
+          updates[`unreadCount.${currentUser.uid}`] = 0;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await updateDoc(convRef, updates);
         }
       }
     };
@@ -171,12 +212,24 @@ export default function ChatView({ chatData, onBack }) {
         <button onClick={onBack} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: COLORS.primary, padding: "0 8px" }}>
           ➔
         </button>
-        <div style={{ width: 44, height: 44, borderRadius: "50%", background: COLORS.accent, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: 18, flexShrink: 0 }}>
-          {getOtherUserName() ? getOtherUserName()[0].toUpperCase() : "👤"}
+
+        {/* Product Image */}
+        <div style={{ width: 44, height: 44, borderRadius: 8, background: COLORS.accent + "22", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0, border: `1px solid ${COLORS.border}` }}>
+          {chatData.productImageURL ? (
+            <img src={chatData.productImageURL} alt={chatData.productTitle} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <span style={{ fontSize: 24 }}>{chatData.productImage || "📦"}</span>
+          )}
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: COLORS.primary }}>{getOtherUserName()}</div>
-          <div style={{ fontSize: 12, color: COLORS.muted }}>بخصوص: <strong style={{ color: COLORS.accent }}>{chatData.productTitle}</strong></div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: COLORS.primary, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {chatData.productTitle}
+          </div>
+          <div style={{ fontSize: 12, color: COLORS.muted, display: "flex", alignItems: "center", gap: 4 }}>
+            <span>البائع:</span>
+            <strong style={{ color: COLORS.accent }}>{chatData.sellerName || getOtherUserName()}</strong>
+          </div>
         </div>
         {chatData.isLibrary && currentUser.uid === chatData.sellerId && (
           <button 
