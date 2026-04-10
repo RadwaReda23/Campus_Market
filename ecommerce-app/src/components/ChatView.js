@@ -6,14 +6,20 @@ import {
 } from "firebase/firestore";
 import { COLORS } from "../constants";
 
-export default function ChatView({ chatData, onBack }) {
+export default function ChatView({ chatData, onBack, onViewProfile }) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [showDurationModal, setShowDurationModal] = useState(false);
   const [durationValue, setDurationValue] = useState("");
   const [durationType, setDurationType] = useState("days");
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [activeEmojiMenu, setActiveEmojiMenu] = useState(null);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const CLOUDINARY_CLOUD_NAME = "dgowyewii";
+  const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
 
   const currentUser = auth.currentUser;
   
@@ -117,20 +123,22 @@ export default function ChatView({ chatData, onBack }) {
     return () => unsubscribe();
   }, [convId, chatData, currentUser]);
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
+  const handleSend = async (e, imageURL = null) => {
+    if (e) e.preventDefault();
+    if (!newMessage.trim() && !imageURL) return;
 
     const text = newMessage.trim();
-    setNewMessage("");
+    if (!imageURL) setNewMessage("");
 
     try {
       const messagesRef = collection(db, "conversations", convId, "messages");
       await addDoc(messagesRef, {
         text,
+        imageURL: imageURL || "",
         senderId: currentUser.uid,
         senderName: currentUser.displayName || currentUser.email,
         timestamp: serverTimestamp(),
+        reactions: {}
       });
 
       // Update last message in the conversation doc
@@ -145,7 +153,7 @@ export default function ChatView({ chatData, onBack }) {
       const otherUserId = chatData.sellerId === currentUser.uid ? chatData.buyerId : chatData.sellerId;
       if (otherUserId) {
           await updateDoc(convRef, {
-            lastMessage: text,
+            lastMessage: imageURL ? "📷 صورة" : text,
             lastMessageTime: serverTimestamp(),
             [`unreadCount.${otherUserId}`]: currentUnread + 1
           });
@@ -157,12 +165,74 @@ export default function ChatView({ chatData, onBack }) {
     }
   };
 
+  const handleImageSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: "POST", body: formData }
+      );
+      const data = await res.json();
+      
+      if (data.secure_url) {
+        await handleSend(null, data.secure_url);
+      }
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("فشل رفع الصورة.");
+    } finally {
+      setUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleToggleReaction = async (messageId, emoji) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+
+    let reactions = msg.reactions || {};
+    let currentEmojiUsers = reactions[emoji] || [];
+
+    if (currentEmojiUsers.includes(currentUser.uid)) {
+      currentEmojiUsers = currentEmojiUsers.filter(uid => uid !== currentUser.uid);
+    } else {
+      currentEmojiUsers = [...currentEmojiUsers, currentUser.uid];
+    }
+
+    if (currentEmojiUsers.length === 0) {
+      delete reactions[emoji];
+    } else {
+      reactions[emoji] = currentEmojiUsers;
+    }
+
+    try {
+      const msgRef = doc(db, "conversations", convId, "messages", messageId);
+      await updateDoc(msgRef, { reactions: reactions });
+      setActiveEmojiMenu(null);
+    } catch (err) {
+      console.error("Error reacting:", err);
+    }
+  };
   const getOtherUserName = () => {
     if (chatData.participantNames) {
       const otherId = Object.keys(chatData.participantNames).find(id => id !== currentUser.uid);
       return chatData.participantNames[otherId] || "مستخدم";
     }
     return chatData.sellerId === currentUser.uid ? chatData.buyerName : chatData.sellerName;
+  };
+
+  const getOtherUserId = () => {
+    if (chatData.participants) {
+      return chatData.participants.find(id => id !== currentUser.uid);
+    }
+    return chatData.sellerId === currentUser.uid ? chatData.buyerId : chatData.sellerId;
   };
 
   const handleSetDuration = async () => {
@@ -228,7 +298,12 @@ export default function ChatView({ chatData, onBack }) {
           </div>
           <div style={{ fontSize: 12, color: COLORS.muted, display: "flex", alignItems: "center", gap: 4 }}>
             <span>البائع:</span>
-            <strong style={{ color: COLORS.accent }}>{chatData.sellerName || getOtherUserName()}</strong>
+            <strong 
+              onClick={() => onViewProfile(getOtherUserId())}
+              style={{ color: COLORS.accent, cursor: "pointer", textDecoration: "underline" }}
+            >
+              {chatData.sellerName || getOtherUserName()}
+            </strong>
           </div>
         </div>
         {chatData.isLibrary && currentUser.uid === chatData.sellerId && (
@@ -267,9 +342,77 @@ export default function ChatView({ chatData, onBack }) {
                 borderRadius: "16px",
                 borderTopRightRadius: isMe ? "4px" : "16px",
                 borderTopLeftRadius: !isMe ? "4px" : "16px",
-                boxShadow: "0 2px 5px rgba(0,0,0,0.05)"
+                boxShadow: "0 2px 5px rgba(0,0,0,0.05)",
+                position: "relative"
               }}>
-                <div style={{ fontSize: 14 }}>{msg.text}</div>
+                {/* Reaction Trigger */}
+                <button 
+                  onClick={() => setActiveEmojiMenu(activeEmojiMenu === msg.id ? null : msg.id)}
+                  style={{
+                    position: "absolute",
+                    top: -10,
+                    [isMe ? "left" : "right"]: -10,
+                    width: 24, height: 24, borderRadius: "50%",
+                    background: "white", border: `1px solid ${COLORS.border}`,
+                    fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.1)", zIndex: 10
+                  }}>
+                  ☺
+                </button>
+
+                {/* Emoji Menu */}
+                {activeEmojiMenu === msg.id && (
+                  <div style={{
+                    position: "absolute",
+                    top: -40,
+                    [isMe ? "left" : "right"]: 0,
+                    background: "white", padding: "4px 8px", borderRadius: 20,
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)", border: `1px solid ${COLORS.border}`,
+                    display: "flex", gap: 8, zIndex: 100
+                  }}>
+                    {["👍", "❤️", "😂", "😮", "😢"].map(emoji => (
+                      <span 
+                        key={emoji} 
+                        onClick={() => handleToggleReaction(msg.id, emoji)}
+                        style={{ cursor: "pointer", fontSize: 18, transition: "transform 0.1s" }}
+                        onMouseEnter={e => e.target.style.transform = "scale(1.3)"}
+                        onMouseLeave={e => e.target.style.transform = "scale(1)"}
+                      >
+                        {emoji}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {msg.imageURL && (
+                  <div style={{ marginBottom: 6, borderRadius: 8, overflow: "hidden", border: `1px solid ${isMe ? "rgba(255,255,255,0.2)" : COLORS.border}` }}>
+                    <img src={msg.imageURL} alt="sent" style={{ maxWidth: "100%", display: "block" }} />
+                  </div>
+                )}
+                {msg.text && <div style={{ fontSize: 14 }}>{msg.text}</div>}
+                
+                {/* Reaction Display */}
+                {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                  <div style={{
+                    display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap"
+                  }}>
+                    {Object.entries(msg.reactions).map(([emoji, users]) => (
+                      <div 
+                        key={emoji}
+                        onClick={() => handleToggleReaction(msg.id, emoji)}
+                        style={{
+                          background: users.includes(currentUser.uid) ? COLORS.accent + "33" : "rgba(0,0,0,0.05)",
+                          padding: "2px 6px", borderRadius: 10, fontSize: 11, display: "flex", alignItems: "center", gap: 3,
+                          cursor: "pointer", border: `1px solid ${users.includes(currentUser.uid) ? COLORS.accent : "transparent"}`
+                        }}
+                       >
+                        <span>{emoji}</span>
+                        <span style={{ fontWeight: 700 }}>{users.length}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div style={{ fontSize: 10, color: isMe ? "rgba(255,255,255,0.7)" : COLORS.muted, marginTop: 4, textAlign: "right" }}>
                   {msg.timestamp?.toDate().toLocaleTimeString("ar-EG", { hour: "numeric", minute: "numeric" }) || "الآن"}
                 </div>
@@ -281,28 +424,47 @@ export default function ChatView({ chatData, onBack }) {
       </div>
 
       {/* Input Area */}
-      <form onSubmit={handleSend} style={{ padding: 16, borderTop: `1px solid ${COLORS.border}`, background: "white", display: "flex", gap: 10, alignItems: "center" }}>
-        <input 
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="اكتب رسالة..."
-          style={{
-            flex: 1, padding: "12px 16px", borderRadius: 24, border: `1px solid ${COLORS.border}`,
-            fontSize: 14, fontFamily: "'Cairo', sans-serif", outline: "none", background: COLORS.cardBg
-          }}
-        />
+      <div style={{ padding: 16, borderTop: `1px solid ${COLORS.border}`, background: "white", display: "flex", gap: 10, alignItems: "center" }}>
         <button 
-          type="submit"
-          disabled={!newMessage.trim()}
+          onClick={() => fileInputRef.current.click()}
+          disabled={uploadingImage}
           style={{
-            width: 46, height: 46, borderRadius: "50%", background: newMessage.trim() ? COLORS.accent : COLORS.border,
-            color: newMessage.trim() ? COLORS.primary : COLORS.muted, border: "none", cursor: newMessage.trim() ? "pointer" : "default",
-            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, transition: "background 0.2s"
+            width: 40, height: 40, borderRadius: "50%", background: COLORS.light,
+            border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20
           }}
         >
-          ➤
+          {uploadingImage ? "⏳" : "📷"}
         </button>
-      </form>
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          style={{ display: "none" }} 
+          accept="image/*"
+          onChange={handleImageSelect}
+        />
+        <form onSubmit={handleSend} style={{ flex: 1, display: "flex", gap: 10 }}>
+          <input 
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="اكتب رسالة..."
+            style={{
+              flex: 1, padding: "12px 16px", borderRadius: 24, border: `1px solid ${COLORS.border}`,
+              fontSize: 14, fontFamily: "'Cairo', sans-serif", outline: "none", background: COLORS.cardBg
+            }}
+          />
+          <button 
+            type="submit"
+            disabled={!newMessage.trim()}
+            style={{
+              width: 46, height: 46, borderRadius: "50%", background: newMessage.trim() ? COLORS.accent : COLORS.border,
+              color: newMessage.trim() ? COLORS.primary : COLORS.muted, border: "none", cursor: newMessage.trim() ? "pointer" : "default",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, transition: "background 0.2s"
+            }}
+          >
+            ➤
+          </button>
+        </form>
+      </div>
 
     </div>
       

@@ -797,6 +797,7 @@ export default function Dashboard({ user }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [currentChat, setCurrentChat] = useState(null);
+  const [selectedProfileId, setSelectedProfileId] = useState(null);
   const searchRef = useRef(null);
   const navigate = useNavigate();
 
@@ -929,7 +930,12 @@ export default function Dashboard({ user }) {
     lostfound: <LostFoundPage onStartChat={startChat} />,
     messages: <MessagesPage onOpenChat={openExistingChat} />,
     profile: <ProfilePage />,
-    chat: <ChatView chatData={currentChat} onBack={() => setActivePage("messages")} />
+    view_profile: <ProfilePage overrideUserId={selectedProfileId} onBack={() => setActivePage("chat")} />,
+    chat: <ChatView 
+            chatData={currentChat} 
+            onBack={() => setActivePage("messages")} 
+            onViewProfile={(uid) => { setSelectedProfileId(uid); setActivePage("view_profile"); }}
+          />
   };
 
   return (

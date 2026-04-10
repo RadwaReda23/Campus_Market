@@ -141,7 +141,7 @@ function RateModal({ targetUser, onClose, currentUser }) {
 }
 
 // ─── ProfilePage ────────────────────────────────────────────────────────────────
-export default function ProfilePage() {
+export default function ProfilePage({ overrideUserId, onBack }) {
   const [userData, setUserData] = useState(null);
   const [myProducts, setMyProducts] = useState([]);
   const [avgRating, setAvgRating] = useState(0);
@@ -155,57 +155,65 @@ export default function ProfilePage() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (!user) return;
-      setEditName(user.displayName || "");
+    const unsubscribe = onAuthStateChanged(auth, async (authenticatedUser) => {
+      // we still need authenticatedUser to know who is doing the rating
+      const targetUid = overrideUserId || authenticatedUser?.uid;
+      if (!targetUid) return;
 
+      setLoading(true);
       try {
-        // جيب بيانات المستخدم من Firestore
-        const userRef = doc(db, "users", user.uid);
+        // جيب بيانات المستخدم من Firestore (المستخدم صاحب الملف)
+        const userRef = doc(db, "users", targetUid);
         const userSnap = await getDoc(userRef);
         let firestoreData = {};
+        
         if (userSnap.exists()) {
           firestoreData = userSnap.data();
           const sum = firestoreData.ratingSum || 0;
           const count = firestoreData.ratingCount || 0;
           setAvgRating(count > 0 ? (sum / count) : 0);
           setRatingCount(count);
+        } else if (targetUid === authenticatedUser?.uid) {
+           // If it's the current user and doc doesn't exist, we use auth info
+           firestoreData = {
+             displayName: authenticatedUser.displayName,
+             email: authenticatedUser.email,
+             photoURL: authenticatedUser.photoURL
+           };
         }
-        setUserData({ ...firestoreData, uid: user.uid, displayName: user.displayName, email: user.email, photoURL: user.photoURL });
 
-        // جيب منتجات ومكتبة المستخدم
+        setUserData({ 
+          ...firestoreData, 
+          uid: targetUid, 
+          displayName: firestoreData.displayName || (targetUid === authenticatedUser?.uid ? authenticatedUser.displayName : "مستخدم"),
+          email: firestoreData.email || (targetUid === authenticatedUser?.uid ? authenticatedUser.email : ""),
+          photoURL: firestoreData.photoURL || (targetUid === authenticatedUser?.uid ? authenticatedUser.photoURL : null)
+        });
+        
+        if (targetUid === authenticatedUser?.uid) {
+          setEditName(firestoreData.displayName || authenticatedUser.displayName || "");
+        }
+
+        // جيب منتجات ومكتبة المستخدم المستهدف
         const [prodSnap, libSnap, lostSnap] = await Promise.all([
-          getDocs(query(collection(db, "products"), where("sellerId", "==", user.uid))),
-          getDocs(collection(db, "library")),
-          getDocs(collection(db, "lostFound"))
+          getDocs(query(collection(db, "products"), where("sellerId", "==", targetUid))),
+          getDocs(query(collection(db, "library"), where("addedById", "==", targetUid))),
+          getDocs(query(collection(db, "lostFound"), where("finderId", "==", targetUid)))
         ]);
 
         const products = prodSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         
-        let libraryItems = libSnap.docs.map(d => ({ 
+        const libraryItems = libSnap.docs.map(d => ({ 
           id: d.id, ...d.data(), 
           isLibrary: true, price: "مجاني", 
           views: 0
         }));
-        
-        // Filter in memory just in case addedById is missing but addedBy matches
-        libraryItems = libraryItems.filter(item => 
-          item.addedById === user.uid || 
-          item.addedBy === user.displayName || 
-          item.addedBy === user.email
-        );
 
-        let lostItems = lostSnap.docs.map(d => ({
+        const lostItems = lostSnap.docs.map(d => ({
           id: d.id, ...d.data(),
           isLibrary: true, isLostAndFound: true, price: "مفقود",
           views: 0
         }));
-
-        lostItems = lostItems.filter(item => 
-          item.finderId === user.uid || 
-          item.finder === user.displayName || 
-          item.finder === user.email
-        );
 
         const combined = [...products, ...libraryItems, ...lostItems]
           .sort((a, b) => {
@@ -222,7 +230,7 @@ export default function ProfilePage() {
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [overrideUserId]);
 
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
@@ -254,6 +262,8 @@ export default function ProfilePage() {
     } catch { alert("خطأ ❌"); }
     setSavingName(false);
   };
+
+  const isOwnProfile = !overrideUserId || overrideUserId === auth.currentUser?.uid;
 
   const displayedProducts = myProducts.filter(p =>
     activeTab === "library" ? p.isLibrary : (!p.isLibrary && p.status === activeTab)
@@ -292,12 +302,24 @@ export default function ProfilePage() {
         boxShadow: "0 8px 32px rgba(26,58,42,0.25)",
         position: "relative", overflow: "hidden",
       }}>
+        {/* Back Button (Only if not own profile) */}
+        {!isOwnProfile && onBack && (
+          <button 
+            onClick={onBack}
+            style={{ 
+              background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%", 
+              width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", 
+              cursor: "pointer", color: "white", fontSize: 18, marginLeft: -8, marginRight: 8
+            }}
+          >➔</button>
+        )}
+
         {/* Decorative circle */}
         <div style={{ position: "absolute", top: -40, left: -40, width: 200, height: 200, borderRadius: "50%", background: "rgba(200,168,75,0.08)" }} />
         <div style={{ position: "absolute", bottom: -60, left: 80, width: 160, height: 160, borderRadius: "50%", background: "rgba(200,168,75,0.05)" }} />
 
         {/* Avatar */}
-        <div style={{ position: "relative", flexShrink: 0 }}>
+          <div style={{ position: "relative", flexShrink: 0 }}>
           {userData?.photoURL ? (
             <img src={userData.photoURL} alt="avatar"
               style={{ width: 90, height: 90, borderRadius: "50%", objectFit: "cover", border: `3px solid ${COLORS.accent}`, boxShadow: "0 4px 16px rgba(0,0,0,0.3)" }} />
@@ -312,20 +334,24 @@ export default function ProfilePage() {
               {userData?.displayName?.[0]?.toUpperCase() || "؟"}
             </div>
           )}
-          <button
-            onClick={() => fileInputRef.current.click()}
-            disabled={uploading}
-            style={{
-              position: "absolute", bottom: 0, left: 0,
-              width: 28, height: 28, borderRadius: "50%",
-              background: COLORS.accent, color: COLORS.primary,
-              border: "2px solid white", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 13, fontWeight: 700, transition: "transform 0.2s",
-            }}
-            title="تغيير الصورة"
-          >📷</button>
-          <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoUpload} />
+          {isOwnProfile && (
+            <>
+              <button
+                onClick={() => fileInputRef.current.click()}
+                disabled={uploading}
+                style={{
+                  position: "absolute", bottom: 0, left: 0,
+                  width: 28, height: 28, borderRadius: "50%",
+                  background: COLORS.accent, color: COLORS.primary,
+                  border: "2px solid white", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 13, fontWeight: 700, transition: "transform 0.2s",
+                }}
+                title="تغيير الصورة"
+              >📷</button>
+              <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handlePhotoUpload} />
+            </>
+          )}
         </div>
 
         {/* Info */}
@@ -379,20 +405,22 @@ export default function ProfilePage() {
         </div>
 
         {/* Rate Button (للمستخدمين الآخرين - مشروط) */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <button
-            onClick={() => setShowRateModal(true)}
-            style={{
-              padding: "10px 18px", borderRadius: 10,
-              background: COLORS.accent, color: COLORS.primary,
-              border: "none", cursor: "pointer",
-              fontSize: 13, fontWeight: 700,
-              fontFamily: "'Cairo', sans-serif",
-              transition: "all 0.2s",
-              whiteSpace: "nowrap",
-            }}
-          >⭐ أضف تقييم</button>
-        </div>
+        {!isOwnProfile && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button
+              onClick={() => setShowRateModal(true)}
+              style={{
+                padding: "10px 18px", borderRadius: 10,
+                background: COLORS.accent, color: COLORS.primary,
+                border: "none", cursor: "pointer",
+                fontSize: 13, fontWeight: 700,
+                fontFamily: "'Cairo', sans-serif",
+                transition: "all 0.2s",
+                whiteSpace: "nowrap",
+              }}
+            >⭐ أضف تقييم</button>
+          </div>
+        )}
       </div>
 
       {/* ─── Main Grid ─── */}
@@ -477,54 +505,56 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* ─── Edit Account ─── */}
+        {/* ─── Edit Account / Rating Summary ─── */}
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-          {/* Edit Name */}
-          <div style={{ background: "white", borderRadius: 16, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
-            <div style={{ padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: COLORS.primary }}>⚙️ إعدادات الحساب</span>
-            </div>
-            <div style={{ padding: 20 }}>
-              <label style={{ fontSize: 12, color: COLORS.muted, fontWeight: 600, display: "block", marginBottom: 6 }}>
-                👤 الاسم
-              </label>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input
-                  value={editName}
-                  onChange={e => setEditName(e.target.value)}
-                  style={{
-                    flex: 1, padding: "9px 12px", border: `1px solid ${COLORS.border}`,
-                    borderRadius: 8, fontSize: 13, fontFamily: "'Cairo', sans-serif",
-                    outline: "none", color: COLORS.primary, direction: "rtl",
-                  }}
-                  placeholder="اكتب اسمك هنا"
-                />
-                <button onClick={handleSaveName} disabled={savingName} style={{
-                  padding: "9px 16px", background: COLORS.primary, color: "white",
-                  border: "none", borderRadius: 8, cursor: savingName ? "not-allowed" : "pointer",
-                  fontSize: 13, fontWeight: 700, fontFamily: "'Cairo', sans-serif",
-                  opacity: savingName ? 0.7 : 1,
-                }}>
-                  {savingName ? "..." : "حفظ"}
-                </button>
+          {/* Edit Name - Only shown if it's my own profile */}
+          {isOwnProfile && (
+            <div style={{ background: "white", borderRadius: 16, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+              <div style={{ padding: "16px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: COLORS.primary }}>⚙️ إعدادات الحساب</span>
               </div>
+              <div style={{ padding: 20 }}>
+                <label style={{ fontSize: 12, color: COLORS.muted, fontWeight: 600, display: "block", marginBottom: 6 }}>
+                  👤 الاسم
+                </label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    style={{
+                      flex: 1, padding: "9px 12px", border: `1px solid ${COLORS.border}`,
+                      borderRadius: 8, fontSize: 13, fontFamily: "'Cairo', sans-serif",
+                      outline: "none", color: COLORS.primary, direction: "rtl",
+                    }}
+                    placeholder="اكتب اسمك هنا"
+                  />
+                  <button onClick={handleSaveName} disabled={savingName} style={{
+                    padding: "9px 16px", background: COLORS.primary, color: "white",
+                    border: "none", borderRadius: 8, cursor: savingName ? "not-allowed" : "pointer",
+                    fontSize: 13, fontWeight: 700, fontFamily: "'Cairo', sans-serif",
+                    opacity: savingName ? 0.7 : 1,
+                  }}>
+                    {savingName ? "..." : "حفظ"}
+                  </button>
+                </div>
 
-              <label style={{ fontSize: 12, color: COLORS.muted, fontWeight: 600, display: "block", marginBottom: 6, marginTop: 16 }}>
-                📧 الإيميل
-              </label>
-              <input
-                value={userData?.email || ""}
-                readOnly
-                style={{
-                  width: "100%", padding: "9px 12px", border: `1px solid ${COLORS.border}`,
-                  borderRadius: 8, fontSize: 13, fontFamily: "'Cairo', sans-serif",
-                  background: COLORS.light, color: COLORS.muted, direction: "ltr",
-                  cursor: "not-allowed",
-                }}
-              />
+                <label style={{ fontSize: 12, color: COLORS.muted, fontWeight: 600, display: "block", marginBottom: 6, marginTop: 16 }}>
+                  📧 الإيميل
+                </label>
+                <input
+                  value={userData?.email || ""}
+                  readOnly
+                  style={{
+                    width: "100%", padding: "9px 12px", border: `1px solid ${COLORS.border}`,
+                    borderRadius: 8, fontSize: 13, fontFamily: "'Cairo', sans-serif",
+                    background: COLORS.light, color: COLORS.muted, direction: "ltr",
+                    cursor: "not-allowed",
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Rating Summary Card */}
           <div style={{ background: "white", borderRadius: 16, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
@@ -575,7 +605,7 @@ export default function ProfilePage() {
       {/* Rate Modal */}
       {showRateModal && (
         <RateModal
-          targetUser={{ uid: auth.currentUser?.uid, name: userData?.displayName || "المستخدم" }}
+          targetUser={{ uid: userData.uid, name: userData?.displayName || "المستخدم" }}
           currentUser={auth.currentUser}
           onClose={() => setShowRateModal(false)}
         />
