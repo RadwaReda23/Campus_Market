@@ -7,6 +7,7 @@ import { Text } from 'react-native';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+
   return (
     <Tabs
       screenOptions={{
@@ -26,21 +27,32 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'الرئيسية',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>🏠</Text>,
+          tabBarIcon: () => <Text style={{ fontSize: 22 }}>🏠</Text>,
         }}
       />
+
       <Tabs.Screen
         name="library"
         options={{
           title: 'المكتبة',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>📚</Text>,
+          tabBarIcon: () => <Text style={{ fontSize: 22 }}>📚</Text>,
         }}
       />
+
       <Tabs.Screen
         name="profile"
         options={{
           title: 'حسابي',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22 }}>👤</Text>,
+          tabBarIcon: () => <Text style={{ fontSize: 22 }}>👤</Text>,
+        }}
+      />
+
+      {/* ✅ أضفنا دي */}
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'رسائل',
+          tabBarIcon: () => <Text style={{ fontSize: 22 }}>📩</Text>,
         }}
       />
     </Tabs>
