@@ -320,7 +320,7 @@ export default function ChatView({ chatData, onBack, onViewProfile }) {
       </div>
 
       {/* Messages Area */}
-      <div style={{ flex: 1, padding: 20, overflowY: "auto", background: COLORS.cardBg, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ flex: 1, padding: "40px 20px", overflowY: "auto", background: COLORS.cardBg, display: "flex", flexDirection: "column", gap: 12 }}>
         {loading ? (
           <div style={{ textAlign: "center", color: COLORS.muted, padding: 40 }}>جاري التحميل...</div>
         ) : messages.length === 0 ? (
@@ -350,8 +350,8 @@ export default function ChatView({ chatData, onBack, onViewProfile }) {
                   onClick={() => setActiveEmojiMenu(activeEmojiMenu === msg.id ? null : msg.id)}
                   style={{
                     position: "absolute",
-                    top: -10,
-                    [isMe ? "left" : "right"]: -10,
+                    bottom: -8,
+                    [isMe ? "left" : "right"]: -12,
                     width: 24, height: 24, borderRadius: "50%",
                     background: "white", border: `1px solid ${COLORS.border}`,
                     fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
@@ -364,11 +364,13 @@ export default function ChatView({ chatData, onBack, onViewProfile }) {
                 {activeEmojiMenu === msg.id && (
                   <div style={{
                     position: "absolute",
-                    top: -40,
-                    [isMe ? "left" : "right"]: 0,
-                    background: "white", padding: "4px 8px", borderRadius: 20,
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)", border: `1px solid ${COLORS.border}`,
-                    display: "flex", gap: 8, zIndex: 100
+                    bottom: 25,
+                    [isMe ? "left" : "right"]: -12,
+                    background: "white", padding: "6px 12px", borderRadius: 30,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.15)", border: `1px solid ${COLORS.border}`,
+                    display: "flex", gap: 10, zIndex: 100,
+                    width: "max-content",
+                    whiteSpace: "nowrap"
                   }}>
                     {["👍", "❤️", "😂", "😮", "😢"].map(emoji => (
                       <span 
