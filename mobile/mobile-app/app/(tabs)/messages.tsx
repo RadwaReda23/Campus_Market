@@ -49,7 +49,6 @@ export default function MessagesScreen() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showReactionPicker, setShowReactionPicker] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
-  // ✅ للتحكم في عرض الرد على التعليقات
   const [replyingToReaction, setReplyingToReaction] = useState<any>(null);
   const [showReplyReactionPicker, setShowReplyReactionPicker] = useState<string | null>(null);
 
@@ -60,24 +59,34 @@ export default function MessagesScreen() {
   };
 
   /* ================= LOAD ITEMS ================= */
-  // ✅ تحميل جميع العناصر من Firestore
   useEffect(() => {
     const load = async () => {
       try {
-        const libSnap = await getDocs(collection(db, "library"));
-        const lostSnap = await getDocs(collection(db, "lost"));
+        // ✅ إصلاح: التحقق من وجود collections قبل الوصول إليها
+        let libData: any[] = [];
+        let lostData: any[] = [];
 
-        const libData = libSnap.docs.map((d) => ({
-          id: d.id,
-          type: "library",
-          ...d.data(),
-        }));
+        try {
+          const libSnap = await getDocs(collection(db, "library"));
+          libData = libSnap.docs.map((d) => ({
+            id: d.id,
+            type: "library",
+            ...d.data(),
+          }));
+        } catch (err) {
+          console.warn("⚠️ collection 'library' غير موجودة:", err);
+        }
 
-        const lostData = lostSnap.docs.map((d) => ({
-          id: d.id,
-          type: "lost",
-          ...d.data(),
-        }));
+        try {
+          const lostSnap = await getDocs(collection(db, "lost"));
+          lostData = lostSnap.docs.map((d) => ({
+            id: d.id,
+            type: "lost",
+            ...d.data(),
+          }));
+        } catch (err) {
+          console.warn("⚠️ collection 'lost' غير موجودة:", err);
+        }
 
         const all = [...libData, ...lostData];
         setItems(all);
@@ -85,7 +94,8 @@ export default function MessagesScreen() {
           setSelectedItem(all[0]);
         }
       } catch (error) {
-        console.error("Error loading items:", error);
+        console.error("❌ Error loading items:", error);
+        Alert.alert("خطأ", "فشل في تحميل البيانات");
       } finally {
         setLoading(false);
       }
@@ -95,82 +105,102 @@ export default function MessagesScreen() {
   }, []);
 
   /* ================= REALTIME MESSAGES ================= */
-  // ✅ الاستماع لرسائل كل عنصر في الوقت الفعلي
   useEffect(() => {
     if (!items.length) return;
 
     const unsubscribers: any[] = [];
 
     items.forEach((item) => {
-      const q = query(
-        collection(db, getCollectionName(item), item.id, "messages"),
-        orderBy("createdAt", "asc")
-      );
+      try {
+        const q = query(
+          collection(db, getCollectionName(item), item.id, "messages"),
+          orderBy("createdAt", "asc")
+        );
 
-      const unsub = onSnapshot(q, (snap) => {
-        const msgs = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        }));
+        const unsub = onSnapshot(
+          q,
+          (snap) => {
+            const msgs = snap.docs.map((d) => ({
+              id: d.id,
+              ...d.data(),
+            }));
 
-        setMessagesMap((prev: any) => ({
-          ...prev,
-          [item.id]: msgs,
-        }));
-      });
+            setMessagesMap((prev: any) => ({
+              ...prev,
+              [item.id]: msgs,
+            }));
+          },
+          (error) => {
+            console.warn(`⚠️ Error listening to messages for ${item.id}:`, error);
+          }
+        );
 
-      unsubscribers.push(unsub);
+        unsubscribers.push(unsub);
+      } catch (error) {
+        console.warn(`⚠️ Error setting up listener for ${item.id}:`, error);
+      }
     });
 
-    return () => unsubscribers.forEach((u) => u());
+    return () => unsubscribers.forEach((u) => u?.());
   }, [items]);
 
   /* ================= LOAD PARTICIPANTS ================= */
-  // ✅ تحميل المشاركين في المحادثة
   const loadParticipants = async (itemId: string) => {
-    const msgs = messagesMap[itemId] || [];
-    const uniqueParticipants = Array.from(
-      new Set(msgs.map((m: any) => m.senderEmail))
-    ).map((email) => ({
-      email,
-      name: msgs.find((m: any) => m.senderEmail === email)?.senderName || email,
-    }));
+    try {
+      const msgs = messagesMap[itemId] || [];
+      const uniqueEmails = Array.from(
+        new Set(msgs.map((m: any) => m.senderEmail).filter(Boolean))
+      );
 
-    setParticipants(uniqueParticipants);
+      const uniqueParticipants = uniqueEmails.map((email: any) => ({
+        email,
+        name: msgs.find((m: any) => m.senderEmail === email)?.senderName || email,
+      }));
+
+      setParticipants(uniqueParticipants);
+    } catch (error) {
+      console.error("❌ Error loading participants:", error);
+    }
   };
 
   /* ================= MARK AS READ ================= */
-  // ✅ وضع علامة على الرسائل كمقروءة
   const markAsRead = async (item: any, itemId: string) => {
-    const msgs = messagesMap[itemId] || [];
+    try {
+      const msgs = messagesMap[itemId] || [];
 
-    msgs.forEach(async (m: any) => {
-      if (!m.readBy?.includes(user?.email)) {
-        await updateDoc(
-          doc(db, getCollectionName(item), itemId, "messages", m.id),
-          {
-            readBy: arrayUnion(user?.email),
-          }
-        );
+      for (const m of msgs) {
+        if (!m.readBy?.includes(user?.email)) {
+          await updateDoc(
+            doc(db, getCollectionName(item), itemId, "messages", m.id),
+            {
+              readBy: arrayUnion(user?.email),
+            }
+          );
+        }
       }
-    });
+    } catch (error) {
+      console.error("❌ Error marking as read:", error);
+    }
   };
 
   /* ================= REQUEST PERMISSIONS ================= */
-  // ✅ طلب صلاحيات الكاميرا والمعرض
   const requestPermissions = async () => {
-    const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
-    const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    try {
+      const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+      const libraryPermission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-    return cameraPermission.granted && libraryPermission.granted;
+      return cameraPermission.granted && libraryPermission.granted;
+    } catch (error) {
+      console.error("❌ Error requesting permissions:", error);
+      return false;
+    }
   };
 
   /* ================= PICK IMAGE ================= */
-  // ✅ اختيار صورة من المعرض
   const pickImage = async () => {
     try {
       const hasPermission = await requestPermissions();
-      
+
       if (!hasPermission) {
         Alert.alert("خطأ", "يرجى التحقق من صلاحيات التطبيق");
         return;
@@ -188,17 +218,16 @@ export default function MessagesScreen() {
         await sendMediaMessage(imageUri, "image");
       }
     } catch (error) {
-      console.error("Error picking image:", error);
+      console.error("❌ Error picking image:", error);
       Alert.alert("خطأ", `فشل في اختيار الصورة: ${error}`);
     }
   };
 
   /* ================= PICK VIDEO ================= */
-  // ✅ اختيار فيديو من المعرض
   const pickVideo = async () => {
     try {
       const hasPermission = await requestPermissions();
-      
+
       if (!hasPermission) {
         Alert.alert("خطأ", "يرجى التحقق من صلاحيات التطبيق");
         return;
@@ -216,15 +245,14 @@ export default function MessagesScreen() {
         await sendMediaMessage(videoUri, "video");
       }
     } catch (error) {
-      console.error("Error picking video:", error);
+      console.error("❌ Error picking video:", error);
       Alert.alert("خطأ", `فشل في اختيار الفيديو: ${error}`);
     }
   };
 
   /* ================= SEND MEDIA MESSAGE ================= */
-  // ✅ إرسال الصور والفيديوهات
   const sendMediaMessage = async (uri: string, type: "image" | "video") => {
-    if (!selectedItem || !user) {
+    if (!selectedItem || !user || !user.email) {
       Alert.alert("خطأ", "الرجاء اختيار محادثة أولاً");
       return;
     }
@@ -242,15 +270,14 @@ export default function MessagesScreen() {
 
       setUploadProgress(30);
 
-      // ✅ قراءة الملف كـ base64
       let base64String: string;
-      
+
       try {
         base64String = await FileSystem.readAsStringAsync(uri, {
           encoding: "base64",
         });
       } catch (readError) {
-        console.error("Error reading file:", readError);
+        console.error("❌ Error reading file:", readError);
         throw new Error("فشل في قراءة الملف");
       }
 
@@ -260,20 +287,18 @@ export default function MessagesScreen() {
 
       setUploadProgress(60);
 
-      // ✅ إنشاء Media URL
       const mimeType = type === "image" ? "image/jpeg" : "video/mp4";
       const mediaUrl = `data:${mimeType};base64,${base64String}`;
 
       setUploadProgress(80);
 
-      // ✅ إنشاء كائن الرسالة مع reactions و reactionReactions
       const messageData = {
         text: type === "image" ? "[📸 صورة]" : "[🎬 فيديو]",
         mediaUrl: mediaUrl,
         mediaType: type,
         senderId: user.uid,
         senderEmail: user.email,
-        senderName: user.displayName || user.email,
+        senderName: user.displayName || user.email || "مستخدم",
         senderPhoto: user.photoURL || null,
         createdAt: serverTimestamp(),
         readBy: [user.email],
@@ -284,11 +309,10 @@ export default function MessagesScreen() {
               senderName: replyingTo.senderName,
             }
           : null,
-        reactions: {}, // ✅ مجموعة الرياكشن على الرسالة
-        reactionReactions: {}, // ✅ مجموعة الرياكشن على الرياكشن
+        reactions: {},
+        reactionReactions: {},
       };
 
-      // ✅ حفظ في Firestore
       const docRef = await addDoc(
         collection(
           db,
@@ -319,12 +343,10 @@ export default function MessagesScreen() {
   };
 
   /* ================= SEND TEXT MESSAGE ================= */
-  // ✅ إرسال الرسائل النصية
   const sendMessage = async () => {
-    if (!text.trim() || !selectedItem || !user) return;
+    if (!text.trim() || !selectedItem || !user || !user.email) return;
 
     try {
-      // ✅ إنشاء رسالة نصية مع reactions و reactionReactions
       await addDoc(
         collection(
           db,
@@ -336,7 +358,7 @@ export default function MessagesScreen() {
           text: text.trim(),
           senderId: user.uid,
           senderEmail: user.email,
-          senderName: user.displayName || user.email,
+          senderName: user.displayName || user.email || "مستخدم",
           senderPhoto: user.photoURL || null,
           createdAt: serverTimestamp(),
           readBy: [user.email],
@@ -347,8 +369,8 @@ export default function MessagesScreen() {
                 senderName: replyingTo.senderName,
               }
             : null,
-          reactions: {}, // ✅ مجموعة الرياكشن على الرسالة
-          reactionReactions: {}, // ✅ مجموعة الرياكشن على الرياكشن
+          reactions: {},
+          reactionReactions: {},
         }
       );
 
@@ -359,15 +381,14 @@ export default function MessagesScreen() {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 300);
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error("❌ Error sending message:", error);
       Alert.alert("خطأ", "فشل في إرسال الرسالة");
     }
   };
 
   /* ================= ADD REACTION ON MESSAGE ================= */
-  // ✅ إضافة رياكشن على الرسالة (اضغط طويل على الرسالة)
   const addReaction = async (emoji: string, messageId: string) => {
-    if (!selectedItem || !user) return;
+    if (!selectedItem || !user || !user.email) return;
 
     try {
       const msgRef = doc(
@@ -381,41 +402,36 @@ export default function MessagesScreen() {
       const msgs = messagesMap[selectedItem?.id] || [];
       const message = msgs.find((m: any) => m.id === messageId);
 
-      // ✅ احصل على جميع الرياكشن الموجودة
-      const reactions = message?.reactions || {};
+      const reactions = { ...(message?.reactions || {}) };
       const key = `${emoji}_${user.email}`;
 
-      // ✅ إذا كان لديك رياكشن بالفعل، احذفه (toggle)
       if (reactions[key]) {
         delete reactions[key];
         console.log(`❌ تم حذف الرياكشن: ${emoji}`);
       } else {
-        // ✅ أضف رياكشن جديد
         reactions[key] = {
           emoji,
           userEmail: user.email,
-          userName: user.displayName || user.email,
+          userName: user.displayName || user.email || "مستخدم",
         };
         console.log(`✅ تم إضافة الرياكشن: ${emoji}`);
       }
 
-      // ✅ حدّث في Firestore
       await updateDoc(msgRef, { reactions });
       setShowReactionPicker(null);
     } catch (error) {
-      console.error("Error adding reaction:", error);
+      console.error("❌ Error adding reaction:", error);
       Alert.alert("خطأ", "فشل في إضافة الرياكشن");
     }
   };
 
   /* ================= ADD REACTION ON REACTION ================= */
-  // ✅ إضافة رياكشن على الرياكشن (اضغط طويل على الرياكشن نفسه)
   const addReactionOnReaction = async (
     emoji: string,
     reactionKey: string,
     messageId: string
   ) => {
-    if (!selectedItem || !user) return;
+    if (!selectedItem || !user || !user.email) return;
 
     try {
       const msgRef = doc(
@@ -429,34 +445,29 @@ export default function MessagesScreen() {
       const msgs = messagesMap[selectedItem?.id] || [];
       const message = msgs.find((m: any) => m.id === messageId);
 
-      // ✅ إنشاء reactionReactions إذا لم تكن موجودة
       if (!message.reactionReactions) {
         await updateDoc(msgRef, {
           reactionReactions: {},
         });
       }
 
-      // ✅ احصل على جميع ردود الرياكشن
-      const allReactionReactions = message.reactionReactions || {};
+      const allReactionReactions = { ...(message.reactionReactions || {}) };
       const reactionReactionsKey = `${reactionKey}_${emoji}_${user.email}`;
 
-      // ✅ إذا كان لديك رد على الرياكشن بالفعل، احذفه (toggle)
       if (allReactionReactions[reactionReactionsKey]) {
         delete allReactionReactions[reactionReactionsKey];
         console.log(`❌ تم حذف الرد على الرياكشن: ${emoji}`);
       } else {
-        // ✅ أضف رد جديد على الرياكشن
         allReactionReactions[reactionReactionsKey] = {
           emoji,
           reactionKey: reactionKey,
           userEmail: user.email,
-          userName: user.displayName || user.email,
+          userName: user.displayName || user.email || "مستخدم",
           createdAt: new Date().toISOString(),
         };
         console.log(`✅ تم إضافة الرد على الرياكشن: ${emoji}`);
       }
 
-      // ✅ حدّث في Firestore
       await updateDoc(msgRef, {
         reactionReactions: allReactionReactions,
       });
@@ -464,29 +475,29 @@ export default function MessagesScreen() {
       setShowReplyReactionPicker(null);
       setReplyingToReaction(null);
     } catch (error) {
-      console.error("Error adding reaction on reaction:", error);
+      console.error("❌ Error adding reaction on reaction:", error);
       Alert.alert("خطأ", "فشل في إضافة الرد على الرياكشن");
     }
   };
 
   /* ================= GET REACTIONS GROUP ================= */
-  // ✅ تجميع الرياكشن حسب النوع (👍 معاهم كم واحد)
   const getReactionsGroup = (messageReactions: any) => {
     if (!messageReactions) return {};
 
     const grouped: any = {};
     Object.values(messageReactions).forEach((reaction: any) => {
-      if (!grouped[reaction.emoji]) {
-        grouped[reaction.emoji] = [];
+      if (reaction?.emoji) {
+        if (!grouped[reaction.emoji]) {
+          grouped[reaction.emoji] = [];
+        }
+        grouped[reaction.emoji].push(reaction.userName || "مستخدم");
       }
-      grouped[reaction.emoji].push(reaction.userName);
     });
 
     return grouped;
   };
 
   /* ================= GET REACTIONS ON REACTION GROUP ================= */
-  // ✅ تجميع الردود على الرياكشن حسب النوع
   const getReactionsOnReactionGroup = (
     reactionReactions: any,
     reactionKey: string
@@ -495,12 +506,11 @@ export default function MessagesScreen() {
 
     const grouped: any = {};
     Object.entries(reactionReactions).forEach(([key, reaction]: any) => {
-      // ✅ تصفية الردود التي تخص هذا الرياكشن فقط
-      if (reaction.reactionKey === reactionKey) {
+      if (reaction?.reactionKey === reactionKey && reaction?.emoji) {
         if (!grouped[reaction.emoji]) {
           grouped[reaction.emoji] = [];
         }
-        grouped[reaction.emoji].push(reaction.userName);
+        grouped[reaction.emoji].push(reaction.userName || "مستخدم");
       }
     });
 
@@ -508,7 +518,6 @@ export default function MessagesScreen() {
   };
 
   /* ================= HELPERS ================= */
-  // ✅ التعديلات المساعدة
   const getLastMessage = (id: string) => {
     const msgs = messagesMap[id] || [];
     return msgs.length ? msgs[msgs.length - 1] : null;
@@ -518,23 +527,27 @@ export default function MessagesScreen() {
     const msgs = messagesMap[id] || [];
 
     return msgs.filter(
-      (m: any) => m.senderId !== user?.uid && !m.readBy?.includes(user?.email)
+      (m: any) =>
+        m.senderId !== user?.uid && m.senderEmail && !m.readBy?.includes(user?.email)
     ).length;
   };
 
   const formatTime = (date: any) => {
     if (!date) return "";
 
-    const d = date?.toDate ? date.toDate() : new Date(date);
+    try {
+      const d = date?.toDate ? date.toDate() : new Date(date);
 
-    return d.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+      return d.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (error) {
+      return "";
+    }
   };
 
   /* ================= SORT & FILTER ================= */
-  // ✅ ترتيب وتصفية المحادثات
   const sortedItems = [...items].sort((a, b) => {
     const aMsg = getLastMessage(a.id);
     const bMsg = getLastMessage(b.id);
@@ -548,13 +561,13 @@ export default function MessagesScreen() {
   const filteredItems = showUnreadOnly
     ? sortedItems.filter((i) => getUnreadCount(i.id) > 0)
     : sortedItems.filter((i) =>
-        i.title.toLowerCase().includes(searchText.toLowerCase())
+        i.title?.toLowerCase().includes(searchText.toLowerCase())
       );
 
   /* ================= RENDER ================= */
   return (
     <View style={styles.mainContainer}>
-      {/* ✅ SIDEBAR - قائمة المحادثات */}
+      {/* ✅ SIDEBAR */}
       <View style={styles.sidebar}>
         <View style={styles.sidebarHeader}>
           <Text style={styles.sidebarTitle}>💬 الرسائل</Text>
@@ -603,7 +616,9 @@ export default function MessagesScreen() {
                 }}
               >
                 <Image
-                  source={{ uri: item.imageURL }}
+                  source={{
+                    uri: item.imageURL || "https://via.placeholder.com/45",
+                  }}
                   style={styles.sidebarImg}
                 />
 
@@ -612,7 +627,9 @@ export default function MessagesScreen() {
                     <Text style={styles.sidebarTime}>
                       {formatTime(last?.createdAt)}
                     </Text>
-                    <Text style={styles.sidebarChatTitle}>{item.title}</Text>
+                    <Text style={styles.sidebarChatTitle} numberOfLines={1}>
+                      {item.title || "بدون عنوان"}
+                    </Text>
                   </View>
                   <Text style={styles.sidebarLast} numberOfLines={1}>
                     {last?.text || "لا توجد رسائل"}
@@ -630,7 +647,7 @@ export default function MessagesScreen() {
         />
       </View>
 
-      {/* ✅ CHAT AREA - منطقة المحادثة */}
+      {/* ✅ CHAT AREA */}
       {loading ? (
         <View style={styles.chatAreaLoading}>
           <ActivityIndicator size="large" color="#1a3a2a" />
@@ -640,14 +657,14 @@ export default function MessagesScreen() {
           {/* CHAT HEADER */}
           <View style={styles.chatAreaHeader}>
             <View>
-              <Text style={styles.chatAreaTitle}>{selectedItem?.title}</Text>
+              <Text style={styles.chatAreaTitle}>{selectedItem?.title || "محادثة"}</Text>
               <Text style={styles.chatAreaSubtitle}>
                 {participants.length} مشارك
               </Text>
             </View>
           </View>
 
-          {/* ✅ MESSAGES - قائمة الرسائل */}
+          {/* ✅ MESSAGES */}
           <FlatList
             ref={flatListRef}
             data={[...(messagesMap[selectedItem?.id] || [])].sort((a, b) => {
@@ -666,7 +683,6 @@ export default function MessagesScreen() {
             }
             renderItem={({ item }) => {
               const isMe = item.senderId === user?.uid;
-              // ✅ تجميع الرياكشن
               const reactionsGroup = getReactionsGroup(item.reactions);
               const hasReactions = Object.keys(reactionsGroup).length > 0;
 
@@ -689,11 +705,11 @@ export default function MessagesScreen() {
                   >
                     {!isMe && (
                       <Text style={styles.messageSender}>
-                        {item.senderName}
+                        {item.senderName || "مستخدم"}
                       </Text>
                     )}
 
-                    {/* ✅ REPLY TO - الرد على رسالة */}
+                    {/* REPLY TO */}
                     {item.replyTo && (
                       <View
                         style={[
@@ -707,7 +723,7 @@ export default function MessagesScreen() {
                             isMe && styles.replyNameMe,
                           ]}
                         >
-                          {item.replyTo.senderName}
+                          {item.replyTo.senderName || "مستخدم"}
                         </Text>
                         <Text
                           style={[
@@ -721,7 +737,7 @@ export default function MessagesScreen() {
                       </View>
                     )}
 
-                    {/* ✅ MESSAGE BUBBLE - فقاعة الرسالة */}
+                    {/* MESSAGE BUBBLE */}
                     <TouchableOpacity
                       onLongPress={() => setShowReactionPicker(item.id)}
                       style={[
@@ -745,7 +761,7 @@ export default function MessagesScreen() {
                         </View>
                       )}
 
-                      {!item.mediaType && (
+                      {!item.mediaType && item.text && (
                         <Text
                           style={[
                             styles.messageText,
@@ -757,14 +773,12 @@ export default function MessagesScreen() {
                       )}
                     </TouchableOpacity>
 
-                    {/* ✅ REACTIONS - عرض الرياكشن على الرسالة */}
+                    {/* REACTIONS */}
                     {hasReactions && (
                       <View style={styles.reactionsContainer}>
                         {Object.entries(reactionsGroup).map(
                           ([emoji, users]: any) => {
-                            // ✅ إنشاء مفتاح فريد للرياكشن
-                            const reactionKey = `${emoji}_${users[0]}`;
-                            // ✅ الحصول على الردود على هذا الرياكشن
+                            const reactionKey = `${emoji}_${users?.[0] || "unknown"}`;
                             const reactionsOnReaction =
                               getReactionsOnReactionGroup(
                                 item.reactionReactions,
@@ -775,10 +789,8 @@ export default function MessagesScreen() {
 
                             return (
                               <View key={emoji} style={styles.reactionWrapper}>
-                                {/* ✅ Main Reaction Bubble */}
                                 <TouchableOpacity
                                   onLongPress={() => {
-                                    // ✅ اضغط طويل على الرياكشن لإضافة رد
                                     setReplyingToReaction(reactionKey);
                                     setShowReplyReactionPicker(item.id);
                                   }}
@@ -788,11 +800,10 @@ export default function MessagesScreen() {
                                     {emoji}
                                   </Text>
                                   <Text style={styles.reactionCount}>
-                                    {users.length}
+                                    {users?.length || 0}
                                   </Text>
                                 </TouchableOpacity>
 
-                                {/* ✅ REACTIONS ON REACTION - عرض الردود على الرياكشن */}
                                 {hasReactionsOnReaction && (
                                   <View style={styles.miniReactionsContainer}>
                                     {Object.entries(reactionsOnReaction).map(
@@ -804,11 +815,11 @@ export default function MessagesScreen() {
                                           <Text style={styles.miniReactionEmoji}>
                                             {miniEmoji}
                                           </Text>
-                                          {miniUsers.length > 1 && (
+                                          {(miniUsers?.length || 0) > 1 && (
                                             <Text
                                               style={styles.miniReactionCount}
                                             >
-                                              {miniUsers.length}
+                                              {miniUsers?.length || 0}
                                             </Text>
                                           )}
                                         </View>
@@ -855,12 +866,12 @@ export default function MessagesScreen() {
             }}
           />
 
-          {/* ✅ REPLY INDICATOR */}
+          {/* REPLY INDICATOR */}
           {replyingTo && (
             <View style={styles.replyingIndicator}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.replyingLabel}>
-                  رد على: {replyingTo.senderName}
+                  رد على: {replyingTo.senderName || "مستخدم"}
                 </Text>
                 <Text numberOfLines={1} style={styles.replyingText}>
                   {replyingTo.text}
@@ -875,7 +886,7 @@ export default function MessagesScreen() {
             </View>
           )}
 
-          {/* ✅ INPUT AREA - منطقة الكتابة */}
+          {/* INPUT AREA */}
           <View style={styles.inputArea}>
             <TouchableOpacity
               onPress={pickImage}
@@ -923,7 +934,7 @@ export default function MessagesScreen() {
         </View>
       )}
 
-      {/* ✅ REACTION PICKER - ON MESSAGE */}
+      {/* REACTION PICKER - ON MESSAGE */}
       {showReactionPicker && (
         <View style={styles.reactionPickerOverlay}>
           <TouchableOpacity
@@ -944,7 +955,7 @@ export default function MessagesScreen() {
         </View>
       )}
 
-      {/* ✅ REACTION PICKER - ON REACTION */}
+      {/* REACTION PICKER - ON REACTION */}
       {showReplyReactionPicker && (
         <View style={styles.reactionPickerOverlay}>
           <TouchableOpacity
@@ -978,7 +989,6 @@ export default function MessagesScreen() {
 }
 
 /* ================= STYLES ================= */
-
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
@@ -1275,7 +1285,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
-  // ✅ REACTIONS
+  // REACTIONS
   reactionsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1307,7 +1317,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
 
-  // ✅ REACTIONS ON REACTION
+  // REACTIONS ON REACTION
   miniReactionsContainer: {
     flexDirection: "row",
     gap: 3,
