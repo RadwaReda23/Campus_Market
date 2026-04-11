@@ -7,6 +7,20 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
 import { useRouter } from 'expo-router';
+import {
+  Cairo_400Regular,
+  Cairo_700Bold,
+  Cairo_900Black,
+  useFonts
+} from '@expo-google-fonts/cairo';
+import {
+  Amiri_400Regular,
+  Amiri_700Bold
+} from '@expo-google-fonts/amiri';
+import * as SplashScreen from 'expo-splash-screen';
+import { Colors } from '@/constants/theme';
+
+SplashScreen.preventAutoHideAsync();
 
 function AuthGate() {
   const router = useRouter();
@@ -24,15 +38,44 @@ function AuthGate() {
       }
     });
     return () => unsub();
-  }, []);
+  }, [checked, router]);
 
   return null;
 }
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const [fontsLoaded] = useFonts({
+    Cairo_400Regular,
+    Cairo_700Bold,
+    Cairo_900Black,
+    Amiri_400Regular,
+    Amiri_700Bold,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
+
+  const customDefaultTheme = {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      primary: Colors.light.primary,
+      background: Colors.light.background,
+      card: Colors.light.primary,
+      text: Colors.light.text,
+      border: Colors.light.border,
+      notification: Colors.light.accent,
+    },
+  };
+
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : customDefaultTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="Register" options={{ headerShown: false }} />
