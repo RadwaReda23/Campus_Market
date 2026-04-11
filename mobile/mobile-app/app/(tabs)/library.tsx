@@ -1,9 +1,9 @@
-// LibraryScreen.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, TextInput, Alert, ActivityIndicator, FlatList, Modal } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, onSnapshot, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { Colors, Fonts } from '@/constants/theme';
 
 const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
 const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
@@ -13,10 +13,13 @@ interface LibraryItem {
   title: string;
   imageURL: string;
   available?: boolean;
-  borrower?: string | null;
-  borrowStart?: string | null;
-  borrowEnd?: string | null;
-  owner?: string | null;
+  ownerId?: string | null;
+  description?: string;
+  location?: string;
+  finder?: string;
+  finderId?: string;
+  claimed?: boolean;
+  date?: string;
 }
 
 export default function LibraryScreen() {
@@ -25,227 +28,160 @@ export default function LibraryScreen() {
   const [lostItems, setLostItems] = useState<LibraryItem[]>([]);
   const [image, setImage] = useState<{ uri: string } | null>(null);
   const [title, setTitle] = useState('');
-  const [borrowStart, setBorrowStart] = useState('');
-  const [borrowEnd, setBorrowEnd] = useState('');
+  const [description, setDescription] = useState('');
+  const [location, setLocation] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
 
-  // Chat State
-  const [chatVisible, setChatVisible] = useState(false);
-  const [chatItem, setChatItem] = useState<LibraryItem | null>(null);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [text, setText] = useState('');
-
-  useEffect(() => { fetchItems(); }, []);
-
-  const fetchItems = async () => {
-    try {
-      const q1 = query(collection(db, "library"), orderBy("createdAt", "desc"));
-      const snapshot1 = await getDocs(q1);
-      const libList = snapshot1.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LibraryItem[];
-      setLibraryItems(libList.filter(i => i.available !== undefined));
-
-      const q2 = query(collection(db, "lost"), orderBy("createdAt", "desc"));
-      const snapshot2 = await getDocs(q2);
-      const lostList = snapshot2.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LibraryItem[];
-      setLostItems(lostList);
-    } catch {
-      Alert.alert("خطأ", "فشل تحميل البيانات");
-    }
-  };
-
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { Alert.alert("خطأ", "محتاجين إذن الصور"); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7 });
-    if (!result.canceled) setImage({ uri: result.assets[0].uri });
-  };
-
-  const uploadToCloudinary = async () => {
-    if (!image) return;
-    const data = new FormData();
-    const response = await fetch(image.uri);
-    const blob = await response.blob();
-    data.append("file", blob);
-    data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-    data.append("folder", activeTab);
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, { method: "POST", body: data });
-    const result = await res.json();
-    if (!res.ok) throw new Error("Upload failed");
-    return result.secure_url;
-  };
+  useEffect(() => {
+    const unsubLib = onSnapshot(query(collection(db, "library"), orderBy("createdAt", "desc")), (snap) => {
+       setLibraryItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LibraryItem[]);
+    });
+    const unsubLost = onSnapshot(query(collection(db, "lostFound"), orderBy("createdAt", "desc")), (snap) => {
+       setLostItems(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as LibraryItem[]);
+    });
+    return () => { unsubLib(); unsubLost(); };
+  }, []);
 
   const handleAddItem = async () => {
-    if (!auth.currentUser) { Alert.alert("خطأ", "سجلي دخول الأول"); return; }
-    if (!title || !image) { Alert.alert("تنبيه", "اكتبي اسم الحاجة واختاري صورة"); return; }
+    if (!auth.currentUser || !title || !image) return;
     setLoading(true);
     try {
-      const imageURL = await uploadToCloudinary();
-      const colName = activeTab === 'borrow' ? "library" : "lost";
-      const docData = activeTab === 'borrow'
-        ? { title, imageURL, available: true, borrower: null, createdAt: serverTimestamp(), owner: auth.currentUser.email, borrowStart: borrowStart || null, borrowEnd: borrowEnd || null }
-        : { title, imageURL, createdAt: serverTimestamp(), owner: auth.currentUser.email };
-      await addDoc(collection(db, colName), docData);
-      Alert.alert("تم ✅", "اتضاف بنجاح");
-      setTitle(''); setImage(null); setBorrowStart(''); setBorrowEnd('');
-      fetchItems();
-    } catch { Alert.alert("خطأ", "حصل مشكلة"); }
-    setLoading(false);
+      // Cloudinary upload logic simplified
+      let imageURL = ""; 
+      const data = new FormData();
+      const response = await fetch(image.uri);
+      const blob = await response.blob();
+      data.append("file", blob);
+      data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, { method: "POST", body: data });
+      const result = await res.json();
+      imageURL = result.secure_url;
+
+      const col = activeTab === 'borrow' ? "library" : "lostFound";
+      const itemData = activeTab === 'borrow' ? {
+        title, imageURL, available: true, owner: auth.currentUser.displayName, ownerId: auth.currentUser.uid, createdAt: serverTimestamp()
+      } : {
+        title, description, location, imageURL, claimed: false, finder: auth.currentUser.displayName, finderId: auth.currentUser.uid, date: "الآن", createdAt: serverTimestamp()
+      };
+      
+      await addDoc(collection(db, col), itemData);
+      setShowAddModal(false);
+      setTitle(''); setImage(null);
+    } catch { Alert.alert("خطأ", "فشل الإرسال"); }
+    finally { setLoading(false); }
   };
 
-  // Chat Functions
-  const openChat = (item: LibraryItem, collectionName: string) => {
-    setChatItem(item);
-    setChatVisible(true);
-    const q = query(collection(db, collectionName, item.id, 'messages'), orderBy('createdAt', 'asc'));
-    onSnapshot(q, snapshot => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
-      setMessages(msgs);
-    });
-  };
+  const renderItemCard = ({ item }: { item: LibraryItem }) => {
+    const isLost = activeTab === 'lost';
+    const canManage = isLost ? (item.finderId === auth.currentUser?.uid) : (item.ownerId === auth.currentUser?.uid);
 
-  const sendMessage = async () => {
-    if (!text.trim() || !chatItem) return;
-    const colName = activeTab === 'borrow' ? 'library' : 'lost';
-    await addDoc(collection(db, colName, chatItem.id, 'messages'), {
-      sender: auth.currentUser?.email,
-      text: text.trim(),
-      createdAt: serverTimestamp()
-    });
-    setText('');
-  };
-
-  const filteredLibrary = libraryItems.filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()));
-  const filteredLost = lostItems.filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()));
-
-  const renderItems = (items: LibraryItem[], isBorrow: boolean) => (
-    <View style={styles.contentRow}>
-      <View style={styles.itemsList}>
-        {items.map(item => {
-          const isOwner = item.owner === auth.currentUser?.email;
-          return (
-            <View key={item.id} style={styles.itemRow}>
-              {item.imageURL && <Image source={{ uri: item.imageURL }} style={styles.itemImage} />}
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemTitle}>{item.title}</Text>
-                {isBorrow && <Text style={[styles.itemStatus, { color: item.available ? '#27ae60' : '#c0392b' }]}>{item.available ? '✅ متاح' : '❌ مستعار'}</Text>}
-                {isBorrow && <Text style={styles.dateText}>{item.borrowStart && item.borrowEnd ? `📅 ${item.borrowStart} → ${item.borrowEnd}` : ''}</Text>}
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 5 }}>
-                {/* زر تعديل الحالة للمالك فقط */}
-                {isBorrow && isOwner && (
-                  <TouchableOpacity 
-                    style={[styles.borrowBtn, { backgroundColor: item.available ? '#1a3a2a' : '#c0392b' }]}
-                    onPress={async () => {
-                      try {
-                        await updateDoc(doc(db, "library", item.id), { available: !item.available });
-                        setLibraryItems(prev => prev.map(i => i.id === item.id ? {...i, available: !i.available} : i));
-                      } catch { Alert.alert("خطأ", "فشل تحديث الحالة"); }
-                    }}
-                  >
-                    <Text style={styles.borrowBtnText}>{item.available ? 'استعر' : 'غير متاح'}</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* زر الحذف للمالك فقط */}
-                {isOwner && (
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={async () => {
-                      try {
-                        const colName = activeTab === 'borrow' ? "library" : "lost";
-                        await deleteDoc(doc(db, colName, item.id));
-                        if (activeTab === 'borrow') {
-                          setLibraryItems(prev => prev.filter(i => i.id !== item.id));
-                        } else {
-                          setLostItems(prev => prev.filter(i => i.id !== item.id));
-                        }
-                        Alert.alert("تم الحذف ✅", "تم حذف المنتج بنجاح");
-                      } catch (err) {
-                        console.log("Delete error:", err);
-                        Alert.alert("خطأ ❌", "فشل الحذف");
-                      }
-                    }}
-                  >
-                    <Text style={styles.deleteBtnText}>🗑️</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* زر الدردشة لكل شخص */}
-                <TouchableOpacity 
-                  style={styles.chatBtn}
-                  onPress={() => openChat(item, activeTab === 'borrow' ? 'library' : 'lost')}
-                >
-                  <Text style={styles.chatBtnText}>💬</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          );
-        })}
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardImageContainer}>
+          <Image source={{ uri: item.imageURL }} style={styles.cardImage} />
+          <View style={[styles.badge, (isLost ? !item.claimed : item.available) ? styles.badgeActive : styles.badgeSold]}>
+            <Text style={styles.badgeText}>{isLost ? (item.claimed ? 'تم الاسترداد' : 'مفقود') : (item.available ? 'متاح' : 'مستعار')}</Text>
+          </View>
+        </View>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
+          {isLost && (
+            <>
+               <Text style={styles.lostDesc} numberOfLines={2}>{item.description}</Text>
+               <View style={styles.tagRow}>
+                  <Text style={styles.tag}>📍 {item.location}</Text>
+                  <Text style={styles.tag}>👤 {item.finder}</Text>
+               </View>
+            </>
+          )}
+          {!isLost && (
+             <Text style={styles.priceTag}>مجاني للاستعارة</Text>
+          )}
+          <View style={styles.cardActions}>
+            {canManage && (
+              <TouchableOpacity
+                style={styles.actionBtnMe}
+                onPress={() => updateDoc(doc(db, isLost ? "lostFound" : "library", item.id), isLost ? { claimed: !item.claimed } : { available: !item.available })}
+              >
+                <Text style={styles.actionBtnText}>{isLost ? (item.claimed ? 'فتح' : 'قفل') : (item.available ? 'إعارة' : 'إرجاع')}</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.actionBtnOther} onPress={() => Alert.alert("تواصل", "تواصل مع المالك لتحديد موعد")}>
+               <Text style={styles.actionBtnTextOther}>💬 تواصل</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
-
-      {/* إضافة عناصر جديدة */}
-      <View style={styles.addBox}>
-        <TextInput placeholder="اسم الحاجة" style={styles.input} value={title} onChangeText={setTitle} />
-        <TextInput placeholder="تاريخ بداية الاستعارة (YYYY-MM-DD)" style={styles.input} value={borrowStart} onChangeText={setBorrowStart} />
-        <TextInput placeholder="تاريخ نهاية الاستعارة (YYYY-MM-DD)" style={styles.input} value={borrowEnd} onChangeText={setBorrowEnd} />
-        <TouchableOpacity style={styles.imageBox} onPress={pickImage}>
-          {image ? <Image source={{ uri: image.uri }} style={styles.image} /> : <Text>📷 اختاري صورة</Text>}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btn} onPress={handleAddItem}>
-          {loading ? <ActivityIndicator color="white" /> : <Text style={styles.btnText}>➕ إضافة</Text>}
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}><Text style={styles.headerTitle}>📚 المكتبة</Text></View>
+      {/* Mirror Topbar */}
+      <View style={styles.topbar}>
+         <Text style={styles.pageTitle}>{activeTab === 'borrow' ? '📚 المكتبة' : '🔍 المفقودات'}</Text>
+         <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddModal(true)}>
+            <Text style={styles.addBtnText}>+ إضافة</Text>
+         </TouchableOpacity>
+      </View>
 
-      <View style={styles.tabRow}>
-        <TouchableOpacity style={[styles.tab, activeTab === 'borrow' && styles.tabActive]} onPress={() => { setActiveTab('borrow'); setSearchQuery(''); }}>
-          <Text style={[styles.tabText, activeTab === 'borrow' && styles.tabTextActive]}>🥼 الاستعارة</Text>
+      <View style={styles.searchSection}>
+        <View style={styles.searchContainer}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput style={styles.searchInput} placeholder="ابحث..." value={searchQuery} onChangeText={setSearchQuery} />
+        </View>
+      </View>
+
+      <View style={styles.tabBar}>
+        <TouchableOpacity style={[styles.tab, activeTab === 'borrow' && styles.tabActive]} onPress={() => setActiveTab('borrow')}>
+          <Text style={[styles.tabLabel, activeTab === 'borrow' && styles.tabLabelActive]}>📦 استعارة</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, activeTab === 'lost' && styles.tabActive]} onPress={() => { setActiveTab('lost'); setSearchQuery(''); }}>
-          <Text style={[styles.tabText, activeTab === 'lost' && styles.tabTextActive]}>🔍 المفقودات</Text>
+        <TouchableOpacity style={[styles.tab, activeTab === 'lost' && styles.tabActive]} onPress={() => setActiveTab('lost')}>
+          <Text style={[styles.tabLabel, activeTab === 'lost' && styles.tabLabelActive]}>🔍 مفقودات</Text>
         </TouchableOpacity>
       </View>
 
-      <TextInput
-        placeholder="ابحث باسم الحاجة"
-        style={styles.searchInput}
-        value={searchQuery}
-        onChangeText={setSearchQuery}
+      <FlatList 
+        data={(activeTab === 'borrow' ? libraryItems : lostItems).filter(i => i.title.toLowerCase().includes(searchQuery.toLowerCase()))} 
+        keyExtractor={item => item.id} 
+        renderItem={renderItemCard} 
+        numColumns={2} 
+        contentContainerStyle={styles.listContent} 
+        columnWrapperStyle={styles.columnWrapper} 
       />
-
-      <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-        {activeTab === 'borrow' ? renderItems(filteredLibrary, true) : renderItems(filteredLost, false)}
-      </ScrollView>
-
-      {/* Chat Modal */}
-      <Modal visible={chatVisible} animationType="slide" onRequestClose={() => setChatVisible(false)}>
-        <View style={{ flex:1, backgroundColor:'#f5f0e8', padding:10 }}>
-          <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center' }}>
-            <Text style={{ fontSize:16, fontWeight:'bold' }}>{chatItem?.title}</Text>
-            <TouchableOpacity onPress={() => setChatVisible(false)}><Text style={{fontSize:18}}>❌</Text></TouchableOpacity>
-          </View>
-          <FlatList
-            data={messages}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <View style={[styles.messageBox, item.sender === auth.currentUser?.email ? styles.myMsg : styles.otherMsg]}>
-                <Text style={styles.messageText}>{item.text}</Text>
-                <Text style={styles.sender}>{item.sender}</Text>
+      
+      <Modal visible={showAddModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+           {/* Reuse logic from Marketplace for parity modal UX */}
+           <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                 <Text style={styles.modalTitle}>➕ إضافة عنصر</Text>
+                 <TouchableOpacity onPress={() => setShowAddModal(false)}><Text style={{fontSize:20}}>✕</Text></TouchableOpacity>
               </View>
-            )}
-            style={{ flex:1, marginTop:10 }}
-          />
-          <View style={styles.inputRow}>
-            <TextInput value={text} onChangeText={setText} style={styles.input} placeholder="اكتب رسالة..." />
-            <TouchableOpacity onPress={sendMessage} style={styles.sendBtn}><Text style={{color:'white'}}>إرسال</Text></TouchableOpacity>
-          </View>
+              <ScrollView>
+                 <TouchableOpacity style={styles.imageBox} onPress={async () => {
+                    const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.7 });
+                    if(!res.canceled) setImage({uri: res.assets[0].uri});
+                 }}>
+                    {image ? <Image source={{uri: image.uri}} style={{width:'100%', height:'100%', borderRadius:12}} /> : <Text>📷 اختر صورة</Text>}
+                 </TouchableOpacity>
+                 <Text style={styles.label}>العنوان</Text>
+                 <TextInput style={styles.input} value={title} onChangeText={setTitle} />
+                 {activeTab === 'lost' && (
+                    <>
+                       <Text style={styles.label}>المكان</Text>
+                       <TextInput style={styles.input} value={location} onChangeText={setLocation} />
+                       <Text style={styles.label}>الوصف</Text>
+                       <TextInput style={[styles.input, {height:60}]} multiline value={description} onChangeText={setDescription} />
+                    </>
+                 )}
+                 <TouchableOpacity style={styles.submitBtn} onPress={handleAddItem} disabled={loading}>
+                    {loading ? <ActivityIndicator color="white" /> : <Text style={styles.submitBtnText}>إضافة</Text>}
+                 </TouchableOpacity>
+              </ScrollView>
+           </View>
         </View>
       </Modal>
     </View>
@@ -253,40 +189,47 @@ export default function LibraryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f0e8' },
-  header: { backgroundColor: '#1a3a2a', padding: 20, paddingTop: 50 },
-  headerTitle: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  tabRow: { flexDirection: 'row', margin: 16, gap: 10 },
-  tab: { flex: 1, padding: 10, borderRadius: 20, borderWidth: 2, borderColor: '#ddd3c0', backgroundColor: 'white', alignItems: 'center' },
-  tabActive: { backgroundColor: '#1a3a2a', borderColor: '#1a3a2a' },
-  tabText: { fontSize: 13, fontWeight: '600', color: '#8a7d6b' },
-  tabTextActive: { color: 'white' },
-  searchInput: { borderWidth: 3, borderColor: '#1a3a2a', margin: 16, marginBottom: 10, padding: 10, borderRadius: 10, fontSize: 14, textAlign: 'right', backgroundColor: '#fff' },
-  contentRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16 },
-  itemsList: { flex: 3 },
-  addBox: { flex: 1, backgroundColor: '#fff', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#ddd', justifyContent: 'flex-start', alignItems: 'center' },
-  input: { borderWidth: 1, borderColor: '#ddd', marginBottom: 10, padding: 8, borderRadius: 8, textAlign: 'right', width: '100%' },
-  imageBox: { height: 100, width: '100%', borderRadius: 10, borderWidth: 1, borderColor: '#ddd', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-  image: { width: '100%', height: '100%' },
-  btn: { backgroundColor: '#1a3a2a', padding: 10, borderRadius: 8, alignItems: 'center', width: '100%' },
-  btnText: { color: 'white' },
-  itemRow: { flexDirection: 'row', alignItems: 'center', padding: 12, borderBottomWidth: 1, borderBottomColor: '#f0ebe0', gap: 10 },
-  itemImage: { width: 50, height: 50, borderRadius: 10 },
-  itemInfo: { flex: 1 },
-  itemTitle: { fontSize: 13, fontWeight: '700', color: '#1a3a2a' },
-  itemStatus: { fontSize: 11, marginTop: 2 },
-  dateText: { fontSize: 10, color:'#555', marginTop:2 },
-  borrowBtn: { backgroundColor: '#1a3a2a', padding: 8, borderRadius: 8 },
-  borrowBtnText: { color: 'white', fontSize: 11 },
-  chatBtn: { backgroundColor: '#27ae60', padding: 8, borderRadius: 8 },
-  chatBtnText: { color: 'white', fontSize: 12 },
-  deleteBtn: { padding:8, backgroundColor:'#e74c3c', borderRadius:8, marginLeft:5 },
-  deleteBtnText: { color:'white', fontSize:12 },
-  messageBox: { padding:8, borderRadius:8, marginVertical:4, maxWidth:'70%' },
-  myMsg: { backgroundColor:'#1a3a2a', alignSelf:'flex-end' },
-  otherMsg: { backgroundColor:'#ddd3c0', alignSelf:'flex-start' },
-  messageText: { color:'white' },
-  sender: { fontSize:9, color:'#eee', marginTop:2 },
-  inputRow: { flexDirection:'row', alignItems:'center', marginTop:5 },
-  sendBtn: { padding:10, backgroundColor:'#1a3a2a', borderRadius:8, marginLeft:5 }
+  container: { flex: 1, backgroundColor: Colors.light.background },
+  topbar: { backgroundColor: 'white', borderBottomWidth: 2, borderBottomColor: Colors.light.border, paddingTop: 60, paddingBottom: 15, paddingHorizontal: 20, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between' },
+  pageTitle: { fontSize: 18, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
+  addBtn: { backgroundColor: Colors.light.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  addBtnText: { color: 'white', fontFamily: Fonts.cairoBold, fontSize: 11 },
+  searchSection: { paddingHorizontal: 15, marginTop: 15 },
+  searchContainer: { flexDirection: 'row-reverse', backgroundColor: 'white', borderRadius: 12, paddingHorizontal: 12, alignItems: 'center', height: 44, borderWidth: 1, borderColor: Colors.light.border },
+  searchIcon: { fontSize: 16, marginLeft: 8 },
+  searchInput: { flex: 1, textAlign: 'right', fontSize: 13, fontFamily: Fonts.cairo },
+  tabBar: { flexDirection: 'row-reverse', paddingHorizontal: 15, marginTop: 15, gap: 10 },
+  tab: { flex: 1, paddingVertical: 8, borderRadius: 20, backgroundColor: 'white', borderWidth: 1, borderColor: Colors.light.border, alignItems: 'center' },
+  tabActive: { backgroundColor: Colors.light.primary, borderColor: Colors.light.primary },
+  tabLabel: { fontSize: 11, fontFamily: Fonts.cairoBold, color: Colors.light.muted },
+  tabLabelActive: { color: 'white' },
+  listContent: { padding: 15, paddingBottom: 100 },
+  columnWrapper: { justifyContent: 'space-between' },
+  card: { width: '48%', backgroundColor: Colors.light.cardBg, borderRadius: 14, marginBottom: 15, borderWidth: 1, borderColor: Colors.light.border, overflow: 'hidden', elevation: 2 },
+  cardImageContainer: { height: 110, position: 'relative' },
+  cardImage: { width: '100%', height: '100%' },
+  badge: { position: 'absolute', top: 6, right: 6, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
+  badgeActive: { backgroundColor: '#d4f4e0' },
+  badgeSold: { backgroundColor: '#fde8e8' },
+  badgeText: { fontSize: 8, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
+  cardInfo: { padding: 10 },
+  cardTitle: { fontSize: 12, fontFamily: Fonts.cairoBold, color: Colors.light.primary, textAlign: 'right' },
+  priceTag: { fontSize: 10, color: Colors.light.accent, fontFamily: Fonts.cairoBold, textAlign: 'right', marginTop: 4 },
+  lostDesc: { fontSize: 9, color: Colors.light.muted, fontFamily: Fonts.cairo, textAlign: 'right', height: 26 },
+  tagRow: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 5, marginTop: 6 },
+  tag: { fontSize: 8, color: '#888', backgroundColor: '#f9f9f9', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 5, fontFamily: Fonts.cairoBold },
+  cardActions: { flexDirection: 'row-reverse', marginTop: 10, gap: 5 },
+  actionBtnMe: { flex: 1, paddingVertical: 4, borderRadius: 6, backgroundColor: Colors.light.primary, alignItems: 'center' },
+  actionBtnOther: { flex: 1, paddingVertical: 4, borderRadius: 6, backgroundColor: Colors.light.accent, alignItems: 'center' },
+  actionBtnText: { color: 'white', fontSize: 8, fontFamily: Fonts.cairoBold },
+  actionBtnTextOther: { color: Colors.light.primary, fontSize: 8, fontFamily: Fonts.cairoBold },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontFamily: Fonts.cairoBold },
+  imageBox: { height: 140, backgroundColor: '#f9f9f9', borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: '#888', justifyContent: 'center', alignItems: 'center', marginVertical: 15 },
+  label: { fontSize: 11, fontFamily: Fonts.cairoBold, color: '#888', textAlign: 'right', marginTop: 10 },
+  input: { backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#eee', padding: 8, textAlign: 'right', fontFamily: Fonts.cairo },
+  submitBtn: { backgroundColor: Colors.light.primary, padding: 14, borderRadius: 12, marginTop: 25, alignItems: 'center' },
+  submitBtnText: { color: 'white', fontFamily: Fonts.cairoBold }
 });
