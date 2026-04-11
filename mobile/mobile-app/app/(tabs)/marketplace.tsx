@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, Alert, ActivityIndicator, FlatList, Modal, ScrollView
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, where, onSnapshot, updateDoc, doc, deleteDoc } from 'firebase/firestore';
+import { 
+  collection, addDoc, getDocs, serverTimestamp, 
+  query, orderBy, onSnapshot, updateDoc, doc, deleteDoc 
+} from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Colors, Fonts } from '@/constants/theme';
 import { useRouter } from 'expo-router';
@@ -154,14 +157,28 @@ export default function MarketplaceScreen() {
         <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
         <Text style={styles.categorySub}>{item.category}</Text>
         <Text style={styles.cardPrice}>{item.price} <Text style={styles.currency}>جنيه</Text></Text>
+        
         <View style={styles.sellerRow}>
           <View style={{flex: 1, alignItems: 'flex-end'}}>
              <Text style={styles.cardSeller} numberOfLines={1}>👤 {item.seller}</Text>
              <Text style={[styles.typeBadge, styles[`type${item.sellerType}` as keyof typeof styles]]}>{item.sellerType || 'طالب'}</Text>
           </View>
+
+          {/* التعديل الجوهري هنا لفتح الشات بالبيانات */}
           {auth.currentUser?.uid !== item.sellerId ? (
-             <TouchableOpacity style={styles.miniChatBtn} onPress={() => router.push('/messages')}>
-                <Text style={{color: 'white', fontSize: 10, fontWeight: 'bold'}}>💬</Text>
+             <TouchableOpacity 
+                style={styles.miniChatBtn} 
+                onPress={() => router.push({
+                  pathname: '/messages',
+                  params: { 
+                    productId: item.id, 
+                    productTitle: item.title, 
+                    productImage: item.imageURL,
+                    type: 'products' // تحديد نوع الكوليكشن هنا مهم جداً
+                  }
+                })}
+             >
+                <Text style={{color: 'white', fontSize: 12, fontWeight: 'bold'}}>💬</Text>
              </TouchableOpacity>
           ) : (
             <View style={styles.ownerActions}>
@@ -181,7 +198,6 @@ export default function MarketplaceScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Mirror Topbar */}
       <View style={styles.topbar}>
          <Text style={styles.pageTitle}>🛒 المنتجات</Text>
          <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddModal(true)}>
@@ -303,7 +319,7 @@ const styles = StyleSheet.create({
   typeطالب: { backgroundColor: '#dbeafe', color: '#1d4ed8' },
   typeدكتور: { backgroundColor: '#fce7f3', color: '#be185d' },
   typeخريج: { backgroundColor: '#dcfce7', color: '#15803d' },
-  miniChatBtn: { backgroundColor: Colors.light.primary, width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  miniChatBtn: { backgroundColor: Colors.light.primary, width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
   ownerActions: { flexDirection: 'row-reverse', gap: 6, alignItems: 'center' },
   viewsText: { fontSize: 8, color: Colors.light.muted },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
