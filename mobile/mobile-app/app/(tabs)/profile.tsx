@@ -29,6 +29,8 @@ export default function ProfileScreen() {
   const [role, setRole]                     = useState('طالب');
   const [photo, setPhoto]                   = useState<string | null>(null);
   const [products, setProducts]             = useState<any[]>([]);
+  const [libraryItems, setLibraryItems]     = useState<any[]>([]);
+  const [lostItems, setLostItems]           = useState<any[]>([]);
   const [stats, setStats]                   = useState({ sold: 0, active: 0 });
   const [loading, setLoading]               = useState(true);
   const [saving, setSaving]                 = useState(false);
@@ -95,6 +97,27 @@ export default function ProfileScreen() {
 
     return () => { unsubUser?.(); unsubProds?.(); };
   }, [overrideUserId]);
+
+  useEffect(() => {
+    let unsubLib: (() => void) | null = null;
+    let unsubLost: (() => void) | null = null;
+    
+    // استخدم auth.currentUser?.email لضمان الحصول على الإيميل حتى لو مستند المستخدم غير موجود
+    const targetEmail = overrideUserId ? email : (auth.currentUser?.email || email);
+
+    if (targetEmail) {
+      const qLib = query(collection(db, "library"), where("owner", "==", targetEmail));
+      unsubLib = onSnapshot(qLib, (snap) => {
+        setLibraryItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+
+      const qLost = query(collection(db, "lost"), where("owner", "==", targetEmail));
+      unsubLost = onSnapshot(qLost, (snap) => {
+        setLostItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      });
+    }
+    return () => { unsubLib?.(); unsubLost?.(); };
+  }, [email, overrideUserId]);
 
   // ─── Pick image ────────────────────────────────────────────────────────────
   const pickImage = async () => {
@@ -257,6 +280,36 @@ export default function ProfileScreen() {
           ))}
           {products.length === 0 && (
             <Text style={styles.empty}>لا توجد منتجات حتى الآن</Text>
+          )}
+        </ScrollView>
+      </View>
+
+      {/* ══ منتجات المكتبة (استعارة ومفقودات) ══ */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>
+          📚 {isOwnProfile ? 'مرفوعاتي في المكتبة (استعارة ومفقودات)' : 'مرفوعات المكتبة'}
+        </Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
+          {libraryItems.map(p => (
+            <View key={p.id} style={styles.miniCard}>
+              <Image source={{ uri: p.imageURL }} style={styles.miniImg} />
+              <Text style={styles.miniTitle} numberOfLines={1}>{p.title}</Text>
+              <View style={[styles.statusBadge, p.available ? styles.bgActive : styles.bgSold]}>
+                <Text style={styles.statusText}>{p.available ? 'استعارة: متاح' : 'استعارة: مستعار'}</Text>
+              </View>
+            </View>
+          ))}
+          {lostItems.map(p => (
+            <View key={p.id} style={styles.miniCard}>
+              <Image source={{ uri: p.imageURL }} style={styles.miniImg} />
+              <Text style={styles.miniTitle} numberOfLines={1}>{p.title}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: '#fdf2d0' }]}>
+                <Text style={[styles.statusText, { color: '#c49000' }]}>مفقود</Text>
+              </View>
+            </View>
+          ))}
+          {libraryItems.length === 0 && lostItems.length === 0 && (
+            <Text style={styles.empty}>لا توجد عناصر مرفوعة في المكتبة</Text>
           )}
         </ScrollView>
       </View>

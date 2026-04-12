@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useLocalSearchParams } from "expo-router";
 import {
   View,
   Text,
@@ -27,6 +28,7 @@ import {
   serverTimestamp,
   doc,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
@@ -36,6 +38,8 @@ const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
 export default function WhatsAppNavigation() {
   const user = auth.currentUser;
   const flatListRef = useRef<any>(null);
+  const params = useLocalSearchParams();
+  const openChatId = params?.openChatId;
 
   const [items, setItems] = useState<any[]>([]);
   const [messagesMap, setMessagesMap] = useState<any>({});
@@ -49,6 +53,7 @@ export default function WhatsAppNavigation() {
   const [activeEmojiMenu, setActiveEmojiMenu] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [previewMedia, setPreviewMedia] = useState<{ uri: string; type: "image" | "video" } | null>(null);
+  const [mediaMenuVisible, setMediaMenuVisible] = useState(false);
 
   useEffect(() => {
     const backAction = () => {
@@ -60,25 +65,58 @@ export default function WhatsAppNavigation() {
     return () => backHandler.remove();
   }, [selectedItem, previewMedia]);
 
-  const getCollectionName = (item: any) => item?.type === "lost" ? "lost" : "library";
+  const getCollectionName = (item: any) => {
+    if (item?.type === "lost") return "lost";
+    if (item?.type === "productChat") return "productChats";
+    return "library";
+  };
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [libSnap, lostSnap] = await Promise.all([
+        const promises: Promise<any>[] = [
           getDocs(collection(db, "library")),
           getDocs(collection(db, "lost"))
-        ]);
-        const all = [
-          ...libSnap.docs.map(d => ({ id: d.id, type: "library", ...d.data() })),
-          ...lostSnap.docs.map(d => ({ id: d.id, type: "lost", ...d.data() }))
         ];
+
+        if (user?.uid) {
+          promises.push(getDocs(query(collection(db, "productChats"), where("buyerId", "==", user.uid))));
+          promises.push(getDocs(query(collection(db, "productChats"), where("sellerId", "==", user.uid))));
+        }
+
+        const results = await Promise.all(promises);
+        
+        const all = [
+          ...results[0].docs.map((d: any) => ({ id: d.id, type: "library", ...d.data() })),
+          ...results[1].docs.map((d: any) => ({ id: d.id, type: "lost", ...d.data() }))
+        ];
+
+        if (results[2]) {
+          results[2].docs.forEach((d: any) => all.push({ id: d.id, type: "productChat", ...d.data() }));
+        }
+        if (results[3]) {
+          results[3].docs.forEach((d: any) => {
+            if (!all.find(a => a.id === d.id)) {
+              all.push({ id: d.id, type: "productChat", ...d.data() });
+            }
+          });
+        }
+
         setItems(all);
       } catch (error) { console.error(error); }
       finally { setLoading(false); }
     };
     load();
-  }, []);
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (openChatId && items.length > 0 && !selectedItem) {
+      const chatItem = items.find(i => i.id === openChatId);
+      if (chatItem) {
+        setSelectedItem(chatItem);
+      }
+    }
+  }, [openChatId, items]);
 
   useEffect(() => {
     if (!items.length) return;
@@ -170,12 +208,7 @@ export default function WhatsAppNavigation() {
   };
 
   const showMediaOptions = () => {
-    Alert.alert("إرسال ميديا", "اختر نوع الميديا", [
-      { text: "📷 صورة من المعرض", onPress: pickImage },
-      { text: "🎥 فيديو من المعرض", onPress: pickVideo },
-      { text: "📸 كاميرا", onPress: openCamera },
-      { text: "إلغاء", style: "cancel" },
-    ]);
+    setMediaMenuVisible(true);
   };
 
   const sendMessage = async () => {
@@ -253,28 +286,45 @@ export default function WhatsAppNavigation() {
 
   const EMOJIS = ["👍", "❤️", "😂", "😮", "😢"];
 
+  const getTimestamp = (timestamp: any) => {
+    if (!timestamp) return 0;
+    if (timestamp.toMillis) return timestamp.toMillis();
+    return new Date(timestamp).getTime() || 0;
+  };
+
   // ── شاشة قايمة المحادثات ──
-  const renderChatList = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerMainTitle}>المحادثات</Text>
-      </View>
-      <View style={styles.searchBarContainer}>
-        <TextInput
-          style={styles.searchBar}
-          placeholder="بحث..."
-          value={searchText}
-          onChangeText={setSearchText}
-          textAlign="right"
-        />
-      </View>
-      {loading ? (
-        <ActivityIndicator size="large" color="#075e54" style={{ marginTop: 20 }} />
-      ) : (
-        <FlatList
-          data={items.filter(i => i.title?.includes(searchText))}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
+  const renderChatList = () => {
+    const displayItems = [...items]
+      .filter(i => i.title?.includes(searchText))
+      .sort((a, b) => {
+        const msgsA = messagesMap[a.id] || [];
+        const msgsB = messagesMap[b.id] || [];
+        const lastA = msgsA[msgsA.length - 1];
+        const lastB = msgsB[msgsB.length - 1];
+        return getTimestamp(lastB?.createdAt) - getTimestamp(lastA?.createdAt);
+      });
+
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.headerMainTitle}>المحادثات</Text>
+        </View>
+        <View style={styles.searchBarContainer}>
+          <TextInput
+            style={styles.searchBar}
+            placeholder="بحث..."
+            value={searchText}
+            onChangeText={setSearchText}
+            textAlign="right"
+          />
+        </View>
+        {loading ? (
+          <ActivityIndicator size="large" color="#075e54" style={{ marginTop: 20 }} />
+        ) : (
+          <FlatList
+            data={displayItems}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => {
             const msgs = messagesMap[item.id] || [];
             const lastMsg = msgs[msgs.length - 1];
             return (
@@ -299,7 +349,8 @@ export default function WhatsAppNavigation() {
         />
       )}
     </View>
-  );
+    );
+  };
 
   // ── شاشة المحادثة ──
   const renderConversation = () => {
@@ -315,7 +366,7 @@ export default function WhatsAppNavigation() {
           <View style={styles.headerTextContainer}>
             <Text style={styles.headerTitle}>{selectedItem.title}</Text>
             <Text style={styles.headerStatus}>
-              {selectedItem.type === "library" ? "📚 مكتبة" : "🔍 مفقودات"}
+              {selectedItem.type === "library" ? "📚 مكتبة" : selectedItem.type === "lost" ? "🔍 مفقودات" : "🛍️ منتج"}
             </Text>
           </View>
           {selectedItem.type === "library" && isOwner && (
@@ -482,6 +533,31 @@ export default function WhatsAppNavigation() {
             </View>
           </View>
         )}
+
+        {/* Media Menu */}
+        {mediaMenuVisible && (
+          <TouchableOpacity style={styles.mediaMenuOverlay} activeOpacity={1} onPress={() => setMediaMenuVisible(false)}>
+            <View style={styles.mediaMenuBox}>
+              <Text style={styles.mediaMenuTitle}>اختر المرفق</Text>
+              
+              <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); pickImage(); }}>
+                <Text style={styles.mediaMenuBtnText}>📷 صورة من المعرض</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); pickVideo(); }}>
+                <Text style={styles.mediaMenuBtnText}>🎥 فيديو من المعرض</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); openCamera(); }}>
+                <Text style={styles.mediaMenuBtnText}>📸 كاميرا</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.mediaMenuBtn, styles.mediaMenuCancelBtn]} onPress={() => setMediaMenuVisible(false)}>
+                <Text style={styles.mediaMenuCancelText}>إلغاء</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
@@ -601,4 +677,48 @@ const styles = StyleSheet.create({
   modalConfirmText: { color: "white", fontWeight: "bold" },
   modalCancel: { flex: 1, backgroundColor: "#f5f5f5", padding: 12, borderRadius: 8, alignItems: "center" },
   modalCancelText: { color: "#333", fontWeight: "bold" },
+  mediaMenuOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    zIndex: 2000,
+  },
+  mediaMenuBox: {
+    backgroundColor: "#fff",
+    width: "100%",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: Platform.OS === "android" ? 100 : 40,
+  },
+  mediaMenuTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#333",
+    textAlign: "center",
+    marginBottom: 15,
+  },
+  mediaMenuBtn: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  mediaMenuBtnText: {
+    fontSize: 16,
+    color: "#075e54",
+    textAlign: "center",
+  },
+  mediaMenuCancelBtn: {
+    borderBottomWidth: 0,
+    marginTop: 10,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 10,
+  },
+  mediaMenuCancelText: {
+    fontSize: 16,
+    color: "red",
+    textAlign: "center",
+    fontWeight: "bold",
+  },
 });

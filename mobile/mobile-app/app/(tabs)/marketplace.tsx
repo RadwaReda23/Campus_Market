@@ -10,20 +10,35 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
+  Modal,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 
 import {
   collection,
+  addDoc,
   getDocs,
   query,
   orderBy,
   where,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  onSnapshot,
 } from "firebase/firestore";
 
 import { auth, db } from "../firebase";
+import * as ImagePicker from "expo-image-picker";
+import { Video } from "expo-av";
 import { useRouter } from "expo-router";
 
 const { width } = Dimensions.get("window");
+
+const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
+const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
 
 interface Product {
   id: string;
@@ -45,6 +60,26 @@ export default function ProductsScreen() {
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("الكل");
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [quickMessage, setQuickMessage] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [productMessages, setProductMessages] = useState<any[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [previewMedia, setPreviewMedia] = useState<{ uri: string; type: "image" | "video" } | null>(null);
+  const [mediaMenuVisible, setMediaMenuVisible] = useState(false);
+
+  useEffect(() => {
+    if (!selectedProduct || !user) {
+      setProductMessages([]);
+      return;
+    }
+    const chatId = `${selectedProduct.id}_${user.uid}`;
+    const q = query(collection(db, "productChats", chatId, "messages"), orderBy("createdAt", "asc"));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setProductMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [selectedProduct, user]);
 
   const categories = ["الكل", "كتب", "دروس", "ملخصات", "أخرى"];
 
@@ -87,30 +122,161 @@ export default function ProductsScreen() {
     return matchSearch && matchCategory;
   });
 
-  /* ================= OPEN CHAT ================= */
-  const openChat = async (product: Product) => {
+  // ── رفع الميديا على Cloudinary ──
+  const uploadToCloudinary = async (uri: string, isVideo: boolean) => {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    const data = new FormData();
+    data.append("file", blob);
+    data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+    data.append("folder", "chat_media");
+    const res = await fetch(
+      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${isVideo ? "video" : "image"}/upload`,
+      { method: "POST", body: data }
+    );
+    const result = await res.json();
+    if (!result.secure_url) throw new Error("Upload failed");
+    return result.secure_url;
+  };
+
+  const sendMedia = async (uri: string, isVideo: boolean) => {
+    if (!selectedProduct || !user) return;
+    setUploadingMedia(true);
+    try {
+      const mediaURL = await uploadToCloudinary(uri, isVideo);
+      const chatId = `${selectedProduct.id}_${user.uid}`;
+      const chatRef = doc(db, "productChats", chatId);
+      const chatSnap = await getDoc(chatRef);
+
+      if (!chatSnap.exists()) {
+        await setDoc(chatRef, {
+          productId: selectedProduct.id,
+          title: `استفسار عن: ${selectedProduct.title}`,
+          imageURL: selectedProduct.imageURL,
+          buyerId: user.uid,
+          sellerId: selectedProduct.sellerId,
+          type: "productChat",
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      await addDoc(collection(db, "productChats", chatId, "messages"), {
+        text: "",
+        mediaURL,
+        mediaType: isVideo ? "video" : "image",
+        senderId: user.uid,
+        senderEmail: user.email,
+        senderName: user.displayName || user.email,
+        createdAt: serverTimestamp(),
+        reactions: {}
+      });
+    } catch (e) {
+      Alert.alert("خطأ", "فشل رفع الميديا");
+      console.error(e);
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") { Alert.alert("خطأ", "نحتاج إذن الصور"); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (!result.canceled) await sendMedia(result.assets[0].uri, false);
+  };
+
+  const pickVideo = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") { Alert.alert("خطأ", "نحتاج إذن الميديا"); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      quality: 0.7,
+      videoMaxDuration: 60,
+    });
+    if (!result.canceled) await sendMedia(result.assets[0].uri, true);
+  };
+
+  const openCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") { Alert.alert("خطأ", "نحتاج إذن الكاميرا"); return; }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      quality: 0.7,
+    });
+    if (!result.canceled) {
+      const isVideo = result.assets[0].type === "video";
+      await sendMedia(result.assets[0].uri, isVideo);
+    }
+  };
+
+  const showMediaOptions = () => {
+    setMediaMenuVisible(true);
+  };
+
+  /* ================= OPEN PRODUCT MODAL ================= */
+  const openProductDetails = (product: Product) => {
     if (!user) {
       Alert.alert("خطأ", "يرجى تسجيل الدخول أولاً");
       return;
     }
-
     if (product.sellerId === user.uid) {
-      Alert.alert("معلومة", "لا يمكنك الشات حول منتجك الخاص");
+      Alert.alert("معلومة", "لا يمكنك مراسلة نفسك عن منتجك");
       return;
     }
+    setSelectedProduct(product);
+    setQuickMessage("");
+  };
 
-    // التنقل إلى صفحة الشات مع تمرير معرّف المنتج
-    router.push({
-      pathname: "/(tabs)/messages",
-      params: { productId: product.id }
-    });
+  /* ================= SEND QUICK MESSAGE ================= */
+  const sendQuickMessage = async () => {
+    if (!selectedProduct || !user) return;
+    
+    setSendingMessage(true);
+    try {
+      const chatId = `${selectedProduct.id}_${user.uid}`;
+      const chatRef = doc(db, "productChats", chatId);
+      const chatSnap = await getDoc(chatRef);
+
+      if (!chatSnap.exists()) {
+        await setDoc(chatRef, {
+          productId: selectedProduct.id,
+          title: `استفسار عن: ${selectedProduct.title}`,
+          imageURL: selectedProduct.imageURL,
+          buyerId: user.uid,
+          sellerId: selectedProduct.sellerId,
+          type: "productChat",
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      if (quickMessage.trim() !== "") {
+        await addDoc(collection(db, "productChats", chatId, "messages"), {
+          text: quickMessage.trim(),
+          senderId: user.uid,
+          senderEmail: user.email,
+          senderName: user.displayName || user.email,
+          createdAt: serverTimestamp(),
+          reactions: {},
+          mediaType: "text"
+        });
+        setQuickMessage("");
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert("خطأ", "حدث خطأ أثناء إرسال الرسالة");
+    } finally {
+      setSendingMessage(false);
+    }
   };
 
   /* ================= RENDER PRODUCT ITEM ================= */
   const renderProduct = ({ item }: { item: Product }) => (
     <TouchableOpacity
       style={styles.productCard}
-      onPress={() => openChat(item)}
+      onPress={() => openProductDetails(item)}
     >
       <Image
         source={{ uri: item.imageURL }}
@@ -209,6 +375,139 @@ export default function ProductsScreen() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
+      )}
+
+      {/* MODAL: PRODUCT DETAILS & QUICK CHAT */}
+      {!!selectedProduct && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 1000, elevation: 10 }]}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex: 1}}>
+            <View style={styles.modalBg}>
+            <View style={styles.modalContent}>
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedProduct(null)}>
+                <Text style={styles.closeBtnText}>✖</Text>
+              </TouchableOpacity>
+
+              {selectedProduct && (
+                <FlatList
+                  data={productMessages}
+                  keyExtractor={item => item.id}
+                  contentContainerStyle={{ paddingBottom: 20 }}
+                  showsVerticalScrollIndicator={false}
+                  ListHeaderComponent={() => (
+                    <View style={{ paddingBottom: 10, borderBottomWidth: 1, borderColor: "#eee", marginBottom: 10 }}>
+                      <Image source={{ uri: selectedProduct.imageURL }} style={styles.modalImage} />
+                      <View style={styles.modalDetails}>
+                        <Text style={styles.modalTitle}>{selectedProduct.title}</Text>
+                        <Text style={styles.modalPrice}>{selectedProduct.price} ج.م</Text>
+                        <Text style={styles.modalSeller}>البائع: {selectedProduct.seller}</Text>
+                        {selectedProduct.description ? (
+                          <Text style={styles.modalDesc}>{selectedProduct.description}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  )}
+                  renderItem={({ item }) => {
+                    const isMe = item.senderId === user?.uid;
+                    return (
+                      <View style={[styles.msgBubble, isMe ? styles.msgMe : styles.msgOther]}>
+                        {item.mediaType === "image" && item.mediaURL && (
+                          <TouchableOpacity onPress={() => setPreviewMedia({ uri: item.mediaURL, type: "image" })}>
+                            <Image source={{ uri: item.mediaURL }} style={styles.msgImage} resizeMode="cover" />
+                          </TouchableOpacity>
+                        )}
+
+                        {item.mediaType === "video" && item.mediaURL && (
+                          <TouchableOpacity onPress={() => setPreviewMedia({ uri: item.mediaURL, type: "video" })} style={styles.videoThumb}>
+                            <Text style={styles.videoPlayIcon}>▶️</Text>
+                            <Text style={styles.videoLabel}>اضغط لتشغيل الفيديو</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {!!item.text && (
+                          <Text style={[styles.msgText, isMe ? styles.txtMe : styles.txtOther]}>{item.text}</Text>
+                        )}
+                      </View>
+                    );
+                  }}
+                />
+              )}
+
+              <View style={styles.quickMessageContainer}>
+                <TouchableOpacity onPress={showMediaOptions} style={styles.mediaBtn} disabled={uploadingMedia}>
+                  {uploadingMedia ? (
+                    <ActivityIndicator size="small" color="#1a3a2a" />
+                  ) : (
+                    <Text style={{ fontSize: 22 }}>📎</Text>
+                  )}
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.quickMessageInput}
+                  value={quickMessage}
+                  onChangeText={setQuickMessage}
+                  multiline
+                  placeholder="اكتب رسالة..."
+                />
+                <TouchableOpacity style={styles.sendBtn} onPress={sendQuickMessage} disabled={sendingMessage}>
+                  {sendingMessage ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.sendBtnText}>إرسال</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Media Menu */}
+            {mediaMenuVisible && (
+              <TouchableOpacity style={styles.mediaMenuOverlay} activeOpacity={1} onPress={() => setMediaMenuVisible(false)}>
+                <View style={styles.mediaMenuBox}>
+                  <Text style={styles.mediaMenuTitle}>اختر المرفق</Text>
+                  
+                  <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); pickImage(); }}>
+                    <Text style={styles.mediaMenuBtnText}>📷 صورة من المعرض</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); pickVideo(); }}>
+                    <Text style={styles.mediaMenuBtnText}>🎥 فيديو من المعرض</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); openCamera(); }}>
+                    <Text style={styles.mediaMenuBtnText}>📸 كاميرا</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={[styles.mediaMenuBtn, styles.mediaMenuCancelBtn]} onPress={() => setMediaMenuVisible(false)}>
+                    <Text style={styles.mediaMenuCancelText}>إلغاء</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      )}
+
+      {/* Preview Modal للصور والفيديو */}
+      {!!previewMedia && (
+        <View style={[StyleSheet.absoluteFill, { zIndex: 2000, elevation: 20 }]}>
+          <View style={styles.previewOverlay}>
+          <TouchableOpacity style={styles.previewClose} onPress={() => setPreviewMedia(null)}>
+            <Text style={styles.previewCloseText}>✕</Text>
+          </TouchableOpacity>
+          {previewMedia?.type === "image" && (
+            <Image source={{ uri: previewMedia.uri }} style={styles.previewImage} resizeMode="contain" />
+          )}
+          {previewMedia?.type === "video" && (
+            <Video
+              source={{ uri: previewMedia.uri }}
+              style={styles.previewVideo}
+              useNativeControls
+              resizeMode={"contain" as any}
+              shouldPlay
+            />
+          )}
+          </View>
+        </View>
       )}
     </View>
   );
@@ -403,6 +702,233 @@ const styles = StyleSheet.create({
   refreshBtnText: {
     color: "#ffffff",
     fontSize: 12,
+    fontWeight: "bold",
+  },
+
+  // Modal Styles
+  modalBg: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingTop: 40,
+    maxHeight: "85%",
+  },
+  closeBtn: {
+    position: "absolute",
+    top: 10,
+    right: 15,
+    zIndex: 10,
+    padding: 5,
+  },
+  closeBtnText: {
+    fontSize: 24,
+    color: "#555",
+  },
+  modalImage: {
+    width: "100%",
+    height: 250,
+    backgroundColor: "#f0f0f0",
+  },
+  modalDetails: {
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1a3a2a",
+    marginBottom: 10,
+    textAlign: "right",
+  },
+  modalPrice: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#c8a84b",
+    marginBottom: 5,
+    textAlign: "right",
+  },
+  modalSeller: {
+    fontSize: 14,
+    color: "#777",
+    marginBottom: 15,
+    textAlign: "right",
+  },
+  modalDesc: {
+    fontSize: 14,
+    color: "#444",
+    lineHeight: 22,
+    textAlign: "right",
+  },
+  quickMessageContainer: {
+    flexDirection: "row-reverse",
+    padding: 15,
+    paddingBottom: Platform.OS === "android" ? 90 : 80,
+    borderTopWidth: 1,
+    borderColor: "#eee",
+    backgroundColor: "#fff",
+    alignItems: "flex-end",
+  },
+  quickMessageInput: {
+    flex: 1,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    minHeight: 45,
+    maxHeight: 100,
+    textAlign: "right",
+    fontSize: 14,
+  },
+  sendBtn: {
+    backgroundColor: "#1a3a2a",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    marginRight: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sendBtnText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  // Messages styling inside Modal
+  msgBubble: {
+    padding: 10,
+    borderRadius: 12,
+    marginHorizontal: 15,
+    marginVertical: 4,
+    maxWidth: "80%",
+  },
+  msgMe: {
+    backgroundColor: "#dcf8c6",
+    alignSelf: "flex-start",
+    borderTopLeftRadius: 0,
+  },
+  msgOther: {
+    backgroundColor: "#f0f0f0",
+    alignSelf: "flex-end",
+    borderTopRightRadius: 0,
+  },
+  msgText: {
+    fontSize: 14,
+    color: "#333",
+  },
+  txtMe: {
+    textAlign: "left",
+  },
+  txtOther: {
+    textAlign: "right",
+  },
+  mediaBtn: {
+    width: 44,
+    height: 44,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f5f5f5",
+    borderRadius: 22,
+    marginRight: 8,
+  },
+  msgImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 10,
+    marginBottom: 4,
+  },
+  videoThumb: {
+    width: 200,
+    height: 120,
+    borderRadius: 10,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  videoPlayIcon: {
+    fontSize: 36,
+  },
+  videoLabel: {
+    color: "white",
+    fontSize: 11,
+    marginTop: 4,
+  },
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.95)",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  previewClose: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    zIndex: 10,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  previewCloseText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "bold"
+  },
+  previewImage: {
+    width: "100%",
+    height: "80%"
+  },
+  previewVideo: {
+    width: "100%",
+    height: 300
+  },
+  mediaMenuOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    zIndex: 2000,
+  },
+  mediaMenuBox: {
+    backgroundColor: "#fff",
+    width: "100%",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+  },
+  mediaMenuTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#333",
+    textAlign: "center",
+    marginBottom: 15,
+  },
+  mediaMenuBtn: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  mediaMenuBtnText: {
+    fontSize: 16,
+    color: "#075e54",
+    textAlign: "center",
+  },
+  mediaMenuCancelBtn: {
+    borderBottomWidth: 0,
+    marginTop: 10,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 10,
+  },
+  mediaMenuCancelText: {
+    fontSize: 16,
+    color: "red",
+    textAlign: "center",
     fontWeight: "bold",
   },
 });
