@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Image,
   ActivityIndicator, RefreshControl, Dimensions, FlatList
 } from 'react-native';
-import { collection, query, orderBy, limit, getDocs, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, where, onSnapshot, doc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Colors, Fonts } from '@/constants/theme';
 import { useRouter } from 'expo-router';
@@ -25,6 +25,8 @@ export default function HomeScreen() {
   const [latestProducts, setLatestProducts] = useState<any[]>([]);
   const [latestLost, setLatestLost] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [userName, setUserName] = useState('');
+  const [userPhoto, setUserPhoto] = useState<string | null>(null);
   const router = useRouter();
 
   const fetchData = async () => {
@@ -58,13 +60,28 @@ export default function HomeScreen() {
   // Listen for authentication changes and fetch unread message counts for the notification bell
   useEffect(() => {
     let unsubscribers: any[] = [];
+    let unsubUser: any = null;
     
     const unsubscribeAuth = auth.onAuthStateChanged(user => {
       if (!user) {
         setUnreadCount(0);
+        setUserName('');
+        setUserPhoto(null);
         return;
       }
       const uid = user.uid;
+
+      unsubUser = onSnapshot(doc(db, "users", uid), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setUserName(data.displayName || data.name || user.displayName || '');
+          setUserPhoto(data.photoURL || user.photoURL || null);
+        } else {
+          setUserName(user.displayName || '');
+          setUserPhoto(user.photoURL || null);
+        }
+      });
+
       const loadChats = async () => {
         try {
           const q1 = query(collection(db, "productChats"), where("sellerId", "==", uid));
@@ -97,6 +114,7 @@ export default function HomeScreen() {
     
     return () => {
       unsubscribeAuth();
+      if (unsubUser) unsubUser();
       unsubscribers.forEach(u => u());
     };
   }, []);
@@ -132,7 +150,11 @@ export default function HomeScreen() {
                  <Text style={styles.logoutTopText}>🚪 خروج</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.avatar} onPress={() => router.push('/profile')}>
-                 <Text style={styles.avatarText}>م</Text>
+                 {userPhoto ? (
+                   <Image source={{ uri: userPhoto }} style={styles.avatarImage} />
+                 ) : (
+                   <Text style={styles.avatarText}>{userName ? userName[0].toUpperCase() : 'م'}</Text>
+                 )}
               </TouchableOpacity>
            </View>
         </View>
@@ -236,7 +258,8 @@ const styles = StyleSheet.create({
   topbarActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12 },
   logoutTopBtn: { backgroundColor: Colors.light.danger + '15', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: Colors.light.danger + '33' },
   logoutTopText: { color: Colors.light.danger, fontSize: 10, fontFamily: Fonts.cairoBold },
-  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.light.primary, justifyContent: 'center', alignItems: 'center' },
+  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.light.primary, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
   avatarText: { color: 'white', fontFamily: Fonts.cairoBold, fontSize: 13 },
   content: { padding: 20 },
   searchBoxLarge: { backgroundColor: 'white', borderWidth: 1, borderColor: Colors.light.border, borderRadius: 12, padding: 12, flexDirection: 'row-reverse', alignItems: 'center', gap: 10, marginBottom: 20, elevation: 2 },
