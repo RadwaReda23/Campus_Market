@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, Image,
   ActivityIndicator, RefreshControl, Dimensions, FlatList
 } from 'react-native';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, where, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { Colors, Fonts } from '@/constants/theme';
 import { useRouter } from 'expo-router';
@@ -24,6 +24,7 @@ export default function HomeScreen() {
   });
   const [latestProducts, setLatestProducts] = useState<any[]>([]);
   const [latestLost, setLatestLost] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const router = useRouter();
 
   const fetchData = async () => {
@@ -54,6 +55,52 @@ export default function HomeScreen() {
 
   useEffect(() => { fetchData(); }, []);
 
+  // Listen for authentication changes and fetch unread message counts for the notification bell
+  useEffect(() => {
+    let unsubscribers: any[] = [];
+    
+    const unsubscribeAuth = auth.onAuthStateChanged(user => {
+      if (!user) {
+        setUnreadCount(0);
+        return;
+      }
+      const uid = user.uid;
+      const loadChats = async () => {
+        try {
+          const q1 = query(collection(db, "productChats"), where("sellerId", "==", uid));
+          const q2 = query(collection(db, "productChats"), where("buyerId", "==", uid));
+          
+          const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
+          
+          const allChats = [...snap1.docs, ...snap2.docs].map(d => d.id);
+          const uniqueChats = Array.from(new Set(allChats));
+          
+          const countsMap: Record<string, number> = {};
+
+          uniqueChats.forEach(chatId => {
+            const qMsg = query(collection(db, "productChats", chatId, "messages"));
+            const unsub = onSnapshot(qMsg, (snapshot) => {
+               const othersMsgs = snapshot.docs.filter(d => d.data().senderId !== uid).length;
+               countsMap[chatId] = othersMsgs;
+               
+               const total = Object.values(countsMap).reduce((acc, val) => acc + val, 0);
+               setUnreadCount(total);
+            });
+            unsubscribers.push(unsub);
+          });
+        } catch (err) {
+          console.error("Error loading chat messages count:", err);
+        }
+      };
+      loadChats();
+    });
+    
+    return () => {
+      unsubscribeAuth();
+      unsubscribers.forEach(u => u());
+    };
+  }, []);
+
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={Colors.light.primary} /></View>;
 
   return (
@@ -72,6 +119,15 @@ export default function HomeScreen() {
         <View style={styles.topbar}>
            <Text style={styles.pageTitle}>🏠 الرئيسية</Text>
            <View style={styles.topbarActions}>
+              {/* Added: Notification bell to show unread messages from product chats */}
+              <TouchableOpacity onPress={() => router.push('/messages')} style={{position: 'relative'}}>
+                <Text style={{fontSize: 22}}>🔔</Text>
+                {unreadCount > 0 && (
+                  <View style={{position: 'absolute', top: -5, right: -5, backgroundColor: Colors.light.danger, borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4}}>
+                    <Text style={{color: 'white', fontSize: 10, fontFamily: Fonts.cairoBold}}>{unreadCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
               <TouchableOpacity style={styles.logoutTopBtn} onPress={() => auth.signOut()}>
                  <Text style={styles.logoutTopText}>🚪 خروج</Text>
               </TouchableOpacity>
