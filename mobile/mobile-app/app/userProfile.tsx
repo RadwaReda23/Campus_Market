@@ -5,21 +5,24 @@ import {
   Alert, ActivityIndicator, Dimensions
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   signOut, updateProfile, onAuthStateChanged
 } from 'firebase/auth';
-import { auth, db } from '../firebase';
+import { auth, db } from './firebase';
 import {
   collection, query, where,
-  doc, updateDoc, onSnapshot
+  doc, updateDoc, onSnapshot, getDocs
 } from 'firebase/firestore';
 import { Colors, Fonts } from '@/constants/theme';
 
 const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
-  const router = useRouter();
+  const router         = useRouter();
+  const params         = useLocalSearchParams();
+  const overrideUserId = Array.isArray(params.userId) ? params.userId[0] : params.userId as string;
+  const overrideUserEmail = (Array.isArray(params.userEmail) ? params.userEmail[0] : params.userEmail) as string;
 
   const [userData, setUserData]             = useState<any>(null);
   const [targetUid, setTargetUid]           = useState<string | null>(null);
@@ -35,7 +38,7 @@ export default function ProfileScreen() {
   const [saving, setSaving]                 = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
-  const isOwnProfile = true;
+  const isOwnProfile = false;
 
   // ─── Auth + Firestore listeners ────────────────────────────────────────────
   useEffect(() => {
@@ -43,15 +46,34 @@ export default function ProfileScreen() {
     let unsubProds: (() => void) | null = null;
 
     const bootstrap = async () => {
-      let uidToFetch = auth.currentUser?.uid;
+      let uidToFetch = overrideUserId || auth.currentUser?.uid;
 
-      if (!uidToFetch && auth.currentUser) {
+      if (!overrideUserId && overrideUserEmail) {
+        const decodedEmail = decodeURIComponent(overrideUserEmail);
+        try {
+          const q = query(collection(db, "users"), where("email", "==", decodedEmail));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            uidToFetch = snap.docs[0].id;
+          }
+        } catch (e) { console.log(e); }
+      }
+
+      if (!uidToFetch && auth.currentUser && !overrideUserEmail) {
         try { await auth.currentUser.reload(); } catch (e) { console.log(e); }
         uidToFetch = auth.currentUser?.uid;
       }
 
-      if (!uidToFetch) { setLoading(false); return; }
-
+      if (!uidToFetch) { 
+        setLoading(false);
+        if (overrideUserEmail) {
+           setEmail(decodeURIComponent(overrideUserEmail));
+           setName(decodeURIComponent(overrideUserEmail).split('@')[0]);
+           setPhoto(null);
+        }
+        return; 
+      }
+      
       setTargetUid(uidToFetch);
 
       unsubUser = onSnapshot(doc(db, "users", uidToFetch), (snap) => {
@@ -64,9 +86,8 @@ export default function ProfileScreen() {
           displayName = data.displayName || data.name || '';
           photoURL    = data.photoURL    || null;
           setRole(data.role || 'طالب');
+          setEmail(data.email || auth.currentUser?.email || '');
         }
-        
-        setEmail(auth.currentUser?.email || '');
 
         if (!displayName && auth.currentUser) {
           displayName = auth.currentUser.displayName || '';
@@ -87,18 +108,27 @@ export default function ProfileScreen() {
       });
     };
 
-    const unsubAuth = onAuthStateChanged(auth, (user) => {
-      if (user) bootstrap();
-      else setLoading(false);
-    });
-    return () => { unsubAuth(); unsubUser?.(); unsubProds?.(); };
-  }, []);
+    if (overrideUserId || overrideUserEmail) {
+      bootstrap();
+    } else {
+      const unsubAuth = onAuthStateChanged(auth, (user) => {
+        if (user) bootstrap();
+        else setLoading(false);
+      });
+      return () => { unsubAuth(); unsubUser?.(); unsubProds?.(); };
+    }
+
+    return () => { unsubUser?.(); unsubProds?.(); };
+  }, [overrideUserId, overrideUserEmail]);
 
   useEffect(() => {
     let unsubLib: (() => void) | null = null;
     let unsubLost: (() => void) | null = null;
-
-    const targetEmail = auth.currentUser?.email || email;
+    
+    // استخدم auth.currentUser?.email لضمان الحصول على الإيميل حتى لو مستند المستخدم غير موجود
+    const targetEmail = overrideUserEmail 
+       ? decodeURIComponent(overrideUserEmail) 
+       : (overrideUserId ? email : (auth.currentUser?.email || email));
 
     if (targetEmail) {
       const qLib = query(collection(db, "library"), where("owner", "==", targetEmail));
@@ -112,7 +142,7 @@ export default function ProfileScreen() {
       });
     }
     return () => { unsubLib?.(); unsubLost?.(); };
-  }, [email]);
+  }, [email, overrideUserId]);
 
   // ─── Pick image ────────────────────────────────────────────────────────────
   const pickImage = async () => {
@@ -135,12 +165,12 @@ export default function ProfileScreen() {
   // ─── Upload to Cloudinary ──────────────────────────────────────────────────
   const uploadToCloudinary = async (pickedUri: string): Promise<string> => {
     const response = await fetch(pickedUri);
-    const blob = await response.blob();
-    const data = new FormData();
+    const blob     = await response.blob();
+    const data     = new FormData();
     data.append("file", blob);
     data.append("upload_preset", "unsigned_preset");
 
-    const res = await fetch("https://api.cloudinary.com/v1_1/dz4nwc1yu/image/upload", {
+    const res    = await fetch("https://api.cloudinary.com/v1_1/dz4nwc1yu/image/upload", {
       method: "POST", body: data,
     });
     const result = await res.json();
@@ -193,7 +223,7 @@ export default function ProfileScreen() {
 
   const userRatings = userData?.ratings || {};
   const ratingKeys = Object.keys(userRatings);
-
+  
   let totalScore = 0;
   for (const key of ratingKeys) {
     totalScore += Number(userRatings[key] || 0);
@@ -234,11 +264,11 @@ export default function ProfileScreen() {
       {/* ══ Header ══ */}
       <View style={styles.header}>
 
-        {!isOwnProfile && (
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={{ color: 'white', fontSize: 20 }}>➔</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity onPress={() => router.back()} style={{ position: 'absolute', top: 50, right: 20, zIndex: 10 }}>
+          <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>✕</Text>
+          </View>
+        </TouchableOpacity>
 
         <TouchableOpacity
           onPress={isOwnProfile ? pickImage : undefined}
@@ -275,24 +305,24 @@ export default function ProfileScreen() {
             <Text style={styles.ratingScore}>{averageRating} / 5</Text>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map(star => {
-                const displayValue = myVote ? myVote : Math.round(Number(averageRating));
-                const isSelected = star <= displayValue;
-                return (
-                  <TouchableOpacity
-                    key={star}
-                    disabled={isOwnProfile}
-                    onPress={() => handleRate(star)}
-                  >
-                    <Text style={[styles.star, isSelected ? styles.starFilled : styles.starEmpty]}>
-                      ★
-                    </Text>
-                  </TouchableOpacity>
-                );
+                 const displayValue = myVote ? myVote : Math.round(Number(averageRating));
+                 const isSelected = star <= displayValue;
+                 return (
+                   <TouchableOpacity 
+                     key={star} 
+                     disabled={isOwnProfile}
+                     onPress={() => handleRate(star)}
+                   >
+                      <Text style={[styles.star, isSelected ? styles.starFilled : styles.starEmpty]}>
+                        ★
+                      </Text>
+                   </TouchableOpacity>
+                 );
               })}
             </View>
             <Text style={styles.ratingCount}>({ratingKeys.length} تقييم)</Text>
             {!isOwnProfile && (
-              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.9)', marginTop: 4, fontFamily: Fonts.cairoBold }}>
+              <Text style={{fontSize: 10, color: 'rgba(255,255,255,0.9)', marginTop: 4, fontFamily: Fonts.cairoBold}}>
                 {myVote ? `تقييمك المُسجل: ${myVote} ⭐️` : 'اضغط النجوم للتصويت'}
               </Text>
             )}
@@ -407,7 +437,7 @@ export default function ProfileScreen() {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   header: {
     backgroundColor: Colors.light.primary,
@@ -424,7 +454,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     overflow: 'hidden',
   },
-  avatarImg: { width: '100%', height: '100%' },
+  avatarImg:    { width: '100%', height: '100%' },
   avatarLetter: { fontSize: 35, color: 'white', fontFamily: Fonts.cairoExtraBold },
   avatarOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -438,7 +468,7 @@ const styles = StyleSheet.create({
   },
   changePhotoText: { fontSize: 11, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
 
-  name: { fontSize: 22, color: 'white', fontFamily: Fonts.cairoBold, marginTop: 10 },
+  name:      { fontSize: 22, color: 'white', fontFamily: Fonts.cairoBold, marginTop: 10 },
   emailText: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: Fonts.cairo, marginTop: 2 },
 
   roleBadge: {
@@ -462,9 +492,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     padding: 15, borderRadius: 20,
   },
-  statBox: { alignItems: 'center' },
-  statVal: { fontSize: 20, color: Colors.light.accent, fontFamily: Fonts.cairoExtraBold },
-  statLab: { fontSize: 10, color: 'white', fontFamily: Fonts.cairo },
+  statBox:     { alignItems: 'center' },
+  statVal:     { fontSize: 20, color: Colors.light.accent, fontFamily: Fonts.cairoExtraBold },
+  statLab:     { fontSize: 10, color: 'white', fontFamily: Fonts.cairo },
   statDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)', height: '100%' },
 
   section: {
@@ -482,20 +512,20 @@ const styles = StyleSheet.create({
     padding: 8, borderRadius: 12,
     borderWidth: 1, borderColor: Colors.light.border,
   },
-  miniImg: { width: '100%', height: 80, borderRadius: 8 },
-  miniTitle: { fontSize: 10, fontFamily: Fonts.cairoBold, marginTop: 5, textAlign: 'right' },
-  miniPrice: { fontSize: 10, color: Colors.light.accent, fontFamily: Fonts.cairoBold, textAlign: 'right' },
+  miniImg:     { width: '100%', height: 80, borderRadius: 8 },
+  miniTitle:   { fontSize: 10, fontFamily: Fonts.cairoBold, marginTop: 5, textAlign: 'right' },
+  miniPrice:   { fontSize: 10, color: Colors.light.accent, fontFamily: Fonts.cairoBold, textAlign: 'right' },
   statusBadge: { alignSelf: 'flex-end', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginTop: 4 },
-  statusText: { fontSize: 8, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
-  bgActive: { backgroundColor: '#d4f4e0' },
-  bgSold: { backgroundColor: '#fde8e8' },
-  empty: { fontSize: 11, color: Colors.light.muted, textAlign: 'center', width: '100%', fontFamily: Fonts.cairo },
+  statusText:  { fontSize: 8, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
+  bgActive:    { backgroundColor: '#d4f4e0' },
+  bgSold:      { backgroundColor: '#fde8e8' },
+  empty:       { fontSize: 11, color: Colors.light.muted, textAlign: 'center', width: '100%', fontFamily: Fonts.cairo },
 
-  label: { fontSize: 11, color: Colors.light.muted, textAlign: 'right', marginBottom: 5, fontFamily: Fonts.cairoBold },
-  input: { borderBottomWidth: 1, borderBottomColor: Colors.light.border, padding: 8, fontFamily: Fonts.cairo, marginBottom: 20 },
+  label:         { fontSize: 11, color: Colors.light.muted, textAlign: 'right', marginBottom: 5, fontFamily: Fonts.cairoBold },
+  input:         { borderBottomWidth: 1, borderBottomColor: Colors.light.border, padding: 8, fontFamily: Fonts.cairo, marginBottom: 20 },
   inputDisabled: { color: '#aaa' },
-  saveBtn: { backgroundColor: Colors.light.primary, padding: 14, borderRadius: 12, alignItems: 'center' },
-  saveBtnText: { color: 'white', fontFamily: Fonts.cairoBold },
+  saveBtn:       { backgroundColor: Colors.light.primary, padding: 14, borderRadius: 12, alignItems: 'center' },
+  saveBtnText:   { color: 'white', fontFamily: Fonts.cairoBold },
   logoutBtn: {
     backgroundColor: '#fff5f5', padding: 12, borderRadius: 12,
     alignItems: 'center', marginTop: 15,

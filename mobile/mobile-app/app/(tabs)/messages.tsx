@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   View,
   Text,
@@ -39,6 +39,7 @@ export default function WhatsAppNavigation() {
   const user = auth.currentUser;
   const flatListRef = useRef<any>(null);
   const params = useLocalSearchParams();
+  const router = useRouter();
   const openChatId = params?.openChatId;
 
   const [items, setItems] = useState<any[]>([]);
@@ -363,18 +364,43 @@ export default function WhatsAppNavigation() {
           <TouchableOpacity onPress={() => setSelectedItem(null)} style={styles.backBtn}>
             <Text style={styles.backBtnText}>{"<"}</Text>
           </TouchableOpacity>
-          <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>{selectedItem.title}</Text>
-            <Text style={styles.headerStatus}>
-              {selectedItem.type === "library" ? "📚 مكتبة" : selectedItem.type === "lost" ? "🔍 مفقودات" : "🛍️ منتج"}
-            </Text>
-          </View>
+
           {selectedItem.type === "library" && isOwner && (
             <TouchableOpacity style={styles.durationBtn} onPress={() => setShowDurationModal(true)}>
               <Text style={styles.durationBtnText}>⏳ تحديد الاستعارة</Text>
             </TouchableOpacity>
           )}
-          <Image source={{ uri: selectedItem.imageURL }} style={styles.headerAvatar} />
+
+          <TouchableOpacity
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' }}
+            onPress={() => {
+              let targetUid = "";
+              let targetEmail = "";
+              if (selectedItem.type === "productChat") {
+                // For product chats, find the other person's UID
+                targetUid = selectedItem.buyerId === user?.uid ? selectedItem.sellerId : selectedItem.buyerId;
+              } else {
+                // For library/lost items, use the owner email
+                targetEmail = selectedItem.owner || "";
+              }
+              
+              if (targetUid) {
+                router.push(`/userProfile?userId=${targetUid}`);
+              } else if (targetEmail) {
+                router.push(`/userProfile?userEmail=${encodeURIComponent(targetEmail)}`);
+              } else {
+                Alert.alert("تنبيه", "لا يمكن فتح بروفايل هذا الشخص");
+              }
+            }}
+          >
+            <View style={styles.headerTextContainer}>
+               <Text style={styles.headerTitle}>{selectedItem.title}</Text>
+               <Text style={styles.headerStatus}>
+                 {selectedItem.type === "library" ? "📚 مكتبة" : selectedItem.type === "lost" ? "🔍 مفقودات" : "🛍️ منتج"}
+               </Text>
+            </View>
+            <Image source={{ uri: selectedItem.imageURL }} style={styles.headerAvatar} />
+          </TouchableOpacity>
         </View>
 
         <KeyboardAvoidingView

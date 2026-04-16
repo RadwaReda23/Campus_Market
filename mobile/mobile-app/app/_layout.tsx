@@ -81,6 +81,7 @@ export default function RootLayout() {
         <Stack.Screen name="Register" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="ForgetPassword" options={{ headerShown: false }} />
+        <Stack.Screen name="userProfile" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <AuthGate />

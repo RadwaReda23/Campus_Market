@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Video } from 'expo-av';
 import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, onSnapshot, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
+import { useRouter } from 'expo-router';
 
 const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
 const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
@@ -22,6 +23,7 @@ interface LibraryItem {
 }
 
 export default function LibraryScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'borrow' | 'lost'>('borrow');
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
   const [lostItems, setLostItems] = useState<LibraryItem[]>([]);
@@ -319,9 +321,17 @@ export default function LibraryScreen() {
                       <Image source={{ uri: chatItem.imageURL }} style={styles.modalImage} />
                       <View style={styles.modalDetails}>
                         <Text style={styles.modalTitle}>{chatItem.title}</Text>
-                        <Text style={styles.modalSeller}>
-                          المالك: {chatItem.owner}
-                        </Text>
+                        {chatItem.owner && chatItem.owner !== auth.currentUser?.email ? (
+                          <TouchableOpacity onPress={() => router.push(`/userProfile?userEmail=${encodeURIComponent(chatItem.owner || '')}`)}>
+                            <Text style={[styles.modalSeller, {color: '#1a3a2a', textDecorationLine: 'underline'}]}>
+                              👤 المالك: {chatItem.owner} (اضغط للتقييم)
+                            </Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <Text style={styles.modalSeller}>
+                            المالك: {chatItem.owner}
+                          </Text>
+                        )}
                       </View>
                     </View>
                   )}
