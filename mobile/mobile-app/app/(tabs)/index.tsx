@@ -97,7 +97,8 @@ export default function HomeScreen() {
           uniqueChats.forEach(chatId => {
             const qMsg = query(collection(db, "productChats", chatId, "messages"));
             const unsub = onSnapshot(qMsg, (snapshot) => {
-               const othersMsgs = snapshot.docs.filter(d => d.data().senderId !== uid).length;
+               // ✅ التعديل: بيعد بس الرسائل اللي من غيره وما اتقريتش
+               const othersMsgs = snapshot.docs.filter(d => d.data().senderId !== uid && !d.data().isRead).length;
                countsMap[chatId] = othersMsgs;
                
                const total = Object.values(countsMap).reduce((acc, val) => acc + val, 0);
