@@ -57,7 +57,6 @@ export default function HomeScreen() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // Listen for authentication changes and fetch unread message counts for the notification bell
   useEffect(() => {
     let unsubscribers: any[] = [];
     let unsubUser: any = null;
@@ -125,7 +124,6 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {setRefreshing(true); fetchData();}} />}>
-        {/* Literal Brand Header (Web Sidebar Logo) */}
         <View style={styles.brandHeader}>
            <View style={styles.logoIcon}><Text style={{fontSize:24}}>🔬</Text></View>
            <View style={{alignItems: 'flex-end'}}>
@@ -134,11 +132,9 @@ export default function HomeScreen() {
            </View>
         </View>
 
-        {/* Mirror Topbar */}
         <View style={styles.topbar}>
            <Text style={styles.pageTitle}>🏠 الرئيسية</Text>
            <View style={styles.topbarActions}>
-              {/* Added: Notification bell to show unread messages from product chats */}
               <TouchableOpacity onPress={() => router.push('/messages')} style={{position: 'relative'}}>
                 <Text style={{fontSize: 22}}>🔔</Text>
                 {unreadCount > 0 && (
@@ -146,9 +142,6 @@ export default function HomeScreen() {
                     <Text style={{color: 'white', fontSize: 10, fontFamily: Fonts.cairoBold}}>{unreadCount}</Text>
                   </View>
                 )}
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.logoutTopBtn} onPress={() => auth.signOut()}>
-                 <Text style={styles.logoutTopText}>🚪 خروج</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.avatar} onPress={() => router.push('/profile')}>
                  {userPhoto ? (
@@ -165,7 +158,6 @@ export default function HomeScreen() {
               <Text>🔍</Text>
               <Text style={styles.searchPlaceholderLarge}>ابحث في المنتجات، المكتبة، المفقودات...</Text>
            </TouchableOpacity>
-           {/* Web's Alert Strip Literal Copy */}
            <LinearGradient 
               colors={[Colors.light.accent + '33', Colors.light.accent + '11']}
               start={{x:0, y:0}} end={{x:1, y:1}}
@@ -174,7 +166,6 @@ export default function HomeScreen() {
               <Text style={styles.alertText}>📢 تذكير: يمكنك الآن تصفح أحدث الكتب والمعدات المتاحة للاستعارة!</Text>
            </LinearGradient>
 
-           {/* Stats Grid - Literal Stat-Card Copy */}
            <View style={styles.statsGrid}>
               <StatCard label="منتج نشط" value={stats.activeProducts} icon="🛒" color={Colors.light.primary} />
               <StatCard label="صفقة مكتملة" value={stats.completedDeals} icon="✅" color="#27ae60" />
@@ -182,7 +173,6 @@ export default function HomeScreen() {
               <StatCard label="عنصر في المكتبة" value={stats.libraryItems} icon="📚" color={Colors.light.accent} />
            </View>
 
-           {/* Products Section */}
            <View style={styles.sectionCard}>
               <View style={styles.sectionHeader}>
                  <Text style={styles.sectionTitle}>🛒 أحدث المنتجات</Text>
@@ -201,7 +191,6 @@ export default function HomeScreen() {
               </ScrollView>
            </View>
 
-           {/* Lost items list (Web style) */}
            <View style={[styles.sectionCard, {marginTop: 20}]}>
               <View style={styles.sectionHeader}>
                  <Text style={styles.sectionTitle}>🔍 مفقودات حديثة</Text>
@@ -257,8 +246,6 @@ const styles = StyleSheet.create({
   topbar: { backgroundColor: 'white', borderBottomWidth: 2, borderBottomColor: Colors.light.border, paddingBottom: 15, paddingTop: 15, paddingHorizontal: 20, flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between' },
   pageTitle: { fontSize: 20, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
   topbarActions: { flexDirection: 'row-reverse', alignItems: 'center', gap: 12 },
-  logoutTopBtn: { backgroundColor: Colors.light.danger + '15', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: Colors.light.danger + '33' },
-  logoutTopText: { color: Colors.light.danger, fontSize: 10, fontFamily: Fonts.cairoBold },
   avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.light.primary, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   avatarImage: { width: '100%', height: '100%' },
   avatarText: { color: 'white', fontFamily: Fonts.cairoBold, fontSize: 13 },
