@@ -3,7 +3,7 @@ import { auth, db } from "../firebase";
 import { onAuthStateChanged, updateProfile } from "firebase/auth";
 import {
   collection, getDocs, query, where,
-  doc, getDoc, updateDoc, addDoc, orderBy,
+  doc, getDoc, updateDoc, addDoc, orderBy, setDoc,
 } from "firebase/firestore";
 
 const CLOUDINARY_CLOUD_NAME = "dgowyewii";
@@ -66,16 +66,25 @@ function RateModal({ targetUser, onClose, currentUser }) {
         createdAt: new Date(),
       });
 
-      // تحديث ratingSum و ratingCount في الـ user document
+      // حساب متوسط التقييم من كل التقييمات
+      const ratingsQuery = query(
+        collection(db, "ratings"),
+        where("ratedUserId", "==", targetUser.uid)
+      );
+      const ratingsSnap = await getDocs(ratingsQuery);
+      let totalSum = 0;
+      let totalCount = 0;
+      ratingsSnap.docs.forEach(d => {
+        totalSum += d.data().score || 0;
+        totalCount++;
+      });
+
+      // تحديث بيانات المستخدم باستخدام setDoc مع merge (بيشتغل حتى لو المستند مش موجود)
       const userRef = doc(db, "users", targetUser.uid);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const data = userSnap.data();
-        await updateDoc(userRef, {
-          ratingSum: (data.ratingSum || 0) + score,
-          ratingCount: (data.ratingCount || 0) + 1,
-        });
-      }
+      await setDoc(userRef, {
+        ratingSum: totalSum,
+        ratingCount: totalCount,
+      }, { merge: true });
 
       alert("شكراً على تقييمك ✅");
       onClose();

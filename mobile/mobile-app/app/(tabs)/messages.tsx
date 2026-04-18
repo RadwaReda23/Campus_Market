@@ -32,8 +32,8 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 
-const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
-const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
+const CLOUDINARY_CLOUD_NAME = "dgowyewii";
+const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
 
 export default function WhatsAppNavigation() {
   const user = auth.currentUser;
@@ -133,10 +133,12 @@ export default function WhatsAppNavigation() {
 
   // ── رفع الميديا على Cloudinary ──
   const uploadToCloudinary = async (uri: string, isVideo: boolean) => {
-    const response = await fetch(uri);
-    const blob = await response.blob();
     const data = new FormData();
-    data.append("file", blob);
+    data.append("file", {
+      uri: uri,
+      type: isVideo ? "video/mp4" : "image/jpeg",
+      name: isVideo ? "upload.mp4" : "upload.jpg",
+    } as any);
     data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
     data.append("folder", "chat_media");
     const res = await fetch(
@@ -144,7 +146,7 @@ export default function WhatsAppNavigation() {
       { method: "POST", body: data }
     );
     const result = await res.json();
-    if (!result.secure_url) throw new Error("Upload failed");
+    if (!result.secure_url) throw new Error(result.error?.message || "Upload failed");
     return result.secure_url;
   };
 

@@ -7,8 +7,8 @@ import { collection, addDoc, getDocs, serverTimestamp, query, orderBy, onSnapsho
 import { auth, db } from '../firebase';
 import { useRouter } from 'expo-router';
 
-const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
-const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
+const CLOUDINARY_CLOUD_NAME = "dgowyewii";
+const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
 
 interface LibraryItem {
   id: string;
@@ -47,10 +47,12 @@ export default function LibraryScreen() {
   const [mediaMenuVisible, setMediaMenuVisible] = useState(false);
 
   const uploadChatMediaToCloudinary = async (uri: string, isVideo: boolean) => {
-    const response = await fetch(uri);
-    const blob = await response.blob();
     const data = new FormData();
-    data.append("file", blob);
+    data.append("file", {
+      uri: uri,
+      type: isVideo ? "video/mp4" : "image/jpeg",
+      name: isVideo ? "upload.mp4" : "upload.jpg",
+    } as any);
     data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
     data.append("folder", "chat_media");
     const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${isVideo ? "video" : "image"}/upload`, {
@@ -58,7 +60,7 @@ export default function LibraryScreen() {
       body: data,
     });
     const result = await res.json();
-    if (!result.secure_url) throw new Error("Upload failed");
+    if (!result.secure_url) throw new Error(result.error?.message || "Upload failed");
     return result.secure_url;
   };
 
@@ -134,14 +136,16 @@ export default function LibraryScreen() {
   const uploadToCloudinary = async () => {
     if (!image) return;
     const data = new FormData();
-    const response = await fetch(image.uri);
-    const blob = await response.blob();
-    data.append("file", blob);
+    data.append("file", {
+      uri: image.uri,
+      type: "image/jpeg",
+      name: "upload.jpg",
+    } as any);
     data.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
     data.append("folder", activeTab);
     const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, { method: "POST", body: data });
     const result = await res.json();
-    if (!res.ok) throw new Error("Upload failed");
+    if (!result.secure_url) throw new Error(result.error?.message || "Upload failed");
     return result.secure_url;
   };
 
