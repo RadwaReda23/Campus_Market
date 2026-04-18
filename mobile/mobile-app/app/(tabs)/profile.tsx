@@ -134,15 +134,6 @@ export default function ProfileScreen() {
 
   // ─── Upload to Cloudinary ──────────────────────────────────────────────────
   const uploadToCloudinary = async (pickedUri: string): Promise<string> => {
-<<<<<<< Updated upstream
-    const response = await fetch(pickedUri);
-    const blob = await response.blob();
-    const data = new FormData();
-    data.append("file", blob);
-    data.append("upload_preset", "unsigned_preset");
-
-    const res = await fetch("https://api.cloudinary.com/v1_1/dz4nwc1yu/image/upload", {
-=======
     const data = new FormData();
     data.append("file", {
       uri: pickedUri,
@@ -152,7 +143,6 @@ export default function ProfileScreen() {
     data.append("upload_preset", "nlkvsjlj");
 
     const res = await fetch("https://api.cloudinary.com/v1_1/dgowyewii/image/upload", {
->>>>>>> Stashed changes
       method: "POST", body: data,
     });
     const result = await res.json();
