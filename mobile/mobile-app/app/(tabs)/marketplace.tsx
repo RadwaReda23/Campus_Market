@@ -26,11 +26,14 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
+  deleteDoc,
   serverTimestamp,
   onSnapshot,
 } from "firebase/firestore";
 
 import { auth, db } from "../firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import * as ImagePicker from "expo-image-picker";
 import { Video } from "expo-av";
 import { useRouter } from "expo-router";
@@ -50,11 +53,21 @@ interface Product {
   sellerId: string;
   description?: string;
   createdAt?: any;
+  status?: 'active' | 'sold';
 }
 
 export default function ProductsScreen() {
   const router = useRouter();
-  const user = auth.currentUser;
+  const [currentUser, setCurrentUser] = useState(auth.currentUser);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return unsub;
+  }, []);
+
+  const user = currentUser;
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -274,37 +287,101 @@ export default function ProductsScreen() {
     }
   };
 
+  /* ================= MANAGE PRODUCT ================= */
+  const handleDeleteProduct = (productId: string) => {
+    Alert.alert("حذف المنتج", "هل أنت متأكد من حذف هذا المنتج نهائياً؟", [
+      { text: "إلغاء", style: "cancel" },
+      {
+        text: "حذف",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "products", productId));
+            setProducts((prev) => prev.filter((p) => p.id !== productId));
+            Alert.alert("تم", "تم حذف المنتج بنجاح");
+          } catch (err) {
+            Alert.alert("خطأ", "فشل حذف المنتج");
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleToggleStatus = async (productId: string, currentStatus?: string) => {
+    const newStatus = currentStatus === "sold" ? "active" : "sold";
+    try {
+      await updateDoc(doc(db, "products", productId), { status: newStatus });
+      setProducts((prev) =>
+        prev.map((p) => (p.id === productId ? { ...p, status: newStatus as any } : p))
+      );
+    } catch (err) {
+      Alert.alert("خطأ", "فشل تحديث حالة المنتج");
+    }
+  };
+
   /* ================= RENDER PRODUCT ITEM ================= */
-  const renderProduct = ({ item }: { item: Product }) => (
-    <TouchableOpacity
-      style={styles.productCard}
-      onPress={() => openProductDetails(item)}
-    >
-      <Image
-        source={{ uri: item.imageURL }}
-        style={styles.productImage}
-      />
+  const renderProduct = ({ item }: { item: Product }) => {
+    const isOwner = item.sellerId === user?.uid;
+    const isSold = item.status === "sold";
 
-      <View style={styles.productInfo}>
-        <Text style={styles.productTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
+    return (
+      <View style={[styles.productCard, isSold && { opacity: 0.7 }]}>
+        <View>
+          <Image source={{ uri: item.imageURL }} style={styles.productImage} />
+          {isSold && (
+            <View style={styles.soldOverlay}>
+              <Text style={styles.soldOverlayText}>تـم الـبيـع</Text>
+            </View>
+          )}
+        </View>
 
-        <Text style={styles.productPrice}>
-          {item.price} ج.م
-        </Text>
-
-        <View style={styles.productFooter}>
-          <Text style={styles.productSeller} numberOfLines={1}>
-            من: {item.seller}
+        <View style={styles.productInfo}>
+          <Text style={styles.productTitle} numberOfLines={2}>
+            {item.title}
           </Text>
-          <TouchableOpacity style={styles.chatBtn}>
-            <Text style={styles.chatBtnText}>💬 شات</Text>
-          </TouchableOpacity>
+
+          <Text style={styles.productPrice}>{item.price} ج.م</Text>
+
+          <View style={styles.productFooter}>
+            <Text style={styles.productSeller} numberOfLines={1}>
+              من: {item.seller}
+            </Text>
+            {!isOwner && !isSold && (
+              <TouchableOpacity style={styles.chatBtn} onPress={() => openProductDetails(item)}>
+                <Text style={styles.chatBtnText}>💬 شات</Text>
+              </TouchableOpacity>
+            )}
+            {isSold && !isOwner && (
+              <View style={[styles.chatBtn, { backgroundColor: "#ccc" }]}>
+                <Text style={styles.chatBtnText}>مباع</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Owner Controls */}
+          {isOwner && (
+            <View style={styles.ownerControls}>
+              <TouchableOpacity
+                style={[styles.controlBtn, styles.deleteBtn]}
+                onPress={() => handleDeleteProduct(item.id)}
+              >
+                <Text style={styles.controlBtnText}>🗑️ حذف</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.controlBtn, isSold ? styles.activeBtn : styles.soldBtn]}
+                onPress={() => handleToggleStatus(item.id, item.status)}
+              >
+                <Text style={styles.controlBtnText}>
+                  {isSold ? "✅ متاح" : "💰 تم البيع"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -932,5 +1009,53 @@ const styles = StyleSheet.create({
     color: "red",
     textAlign: "center",
     fontWeight: "bold",
+  },
+  // Sold Overlay
+  soldOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 5,
+  },
+  soldOverlayText: {
+    backgroundColor: "rgba(255,255,255,0.9)",
+    color: "#d32f2f",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: "bold",
+    transform: [{ rotate: "-15deg" }],
+  },
+  // Owner Controls
+  ownerControls: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    paddingTop: 8,
+    gap: 8,
+  },
+  controlBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  controlBtnText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "bold",
+  },
+  deleteBtn: {
+    backgroundColor: "#ff5252",
+  },
+  soldBtn: {
+    backgroundColor: "#1a3a2a",
+  },
+  activeBtn: {
+    backgroundColor: "#4caf50",
   },
 });
