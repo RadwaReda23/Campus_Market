@@ -12,37 +12,38 @@ import {
 import { auth, db } from './firebase';
 import {
   collection, query, where,
-  doc, updateDoc, onSnapshot, getDocs
+  doc, updateDoc, onSnapshot, getDocs, setDoc
 } from 'firebase/firestore';
 import { Colors, Fonts } from '@/constants/theme';
 
 const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
-  const router         = useRouter();
-  const params         = useLocalSearchParams();
+  const router = useRouter();
+  const params = useLocalSearchParams();
   const overrideUserId = Array.isArray(params.userId) ? params.userId[0] : params.userId as string;
   const overrideUserEmail = (Array.isArray(params.userEmail) ? params.userEmail[0] : params.userEmail) as string;
 
-  const [userData, setUserData]             = useState<any>(null);
-  const [targetUid, setTargetUid]           = useState<string | null>(null);
-  const [name, setName]                     = useState('');
-  const [email, setEmail]                   = useState('');
-  const [role, setRole]                     = useState('طالب');
-  const [photo, setPhoto]                   = useState<string | null>(null);
-  const [products, setProducts]             = useState<any[]>([]);
-  const [libraryItems, setLibraryItems]     = useState<any[]>([]);
-  const [lostItems, setLostItems]           = useState<any[]>([]);
-  const [stats, setStats]                   = useState({ sold: 0, active: 0 });
-  const [loading, setLoading]               = useState(true);
-  const [saving, setSaving]                 = useState(false);
+  const [userData, setUserData] = useState<any>(null);
+  const [targetUid, setTargetUid] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('طالب');
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [libraryItems, setLibraryItems] = useState<any[]>([]);
+  const [lostItems, setLostItems] = useState<any[]>([]);
+  const [stats, setStats] = useState({ sold: 0, active: 0 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [localVote, setLocalVote] = useState<number | null>(null);
 
-  const isOwnProfile = false;
+  const isOwnProfile = targetUid === auth.currentUser?.uid;
 
   // ─── Auth + Firestore listeners ────────────────────────────────────────────
   useEffect(() => {
-    let unsubUser: (() => void) | null  = null;
+    let unsubUser: (() => void) | null = null;
     let unsubProds: (() => void) | null = null;
 
     const bootstrap = async () => {
@@ -64,16 +65,16 @@ export default function ProfileScreen() {
         uidToFetch = auth.currentUser?.uid;
       }
 
-      if (!uidToFetch) { 
+      if (!uidToFetch) {
         setLoading(false);
         if (overrideUserEmail) {
-           setEmail(decodeURIComponent(overrideUserEmail));
-           setName(decodeURIComponent(overrideUserEmail).split('@')[0]);
-           setPhoto(null);
+          setEmail(decodeURIComponent(overrideUserEmail));
+          setName(decodeURIComponent(overrideUserEmail).split('@')[0]);
+          setPhoto(null);
         }
-        return; 
+        return;
       }
-      
+
       setTargetUid(uidToFetch);
 
       unsubUser = onSnapshot(doc(db, "users", uidToFetch), (snap) => {
@@ -84,14 +85,14 @@ export default function ProfileScreen() {
           const data = snap.data();
           setUserData(data);
           displayName = data.displayName || data.name || '';
-          photoURL    = data.photoURL    || null;
+          photoURL = data.photoURL || null;
           setRole(data.role || 'طالب');
           setEmail(data.email || auth.currentUser?.email || '');
         }
 
         if (!displayName && auth.currentUser) {
           displayName = auth.currentUser.displayName || '';
-          photoURL    = photoURL || auth.currentUser.photoURL || null;
+          photoURL = photoURL || auth.currentUser.photoURL || null;
         }
 
         setName(displayName);
@@ -124,11 +125,11 @@ export default function ProfileScreen() {
   useEffect(() => {
     let unsubLib: (() => void) | null = null;
     let unsubLost: (() => void) | null = null;
-    
+
     // استخدم auth.currentUser?.email لضمان الحصول على الإيميل حتى لو مستند المستخدم غير موجود
-    const targetEmail = overrideUserEmail 
-       ? decodeURIComponent(overrideUserEmail) 
-       : (overrideUserId ? email : (auth.currentUser?.email || email));
+    const targetEmail = overrideUserEmail
+      ? decodeURIComponent(overrideUserEmail)
+      : (overrideUserId ? email : (auth.currentUser?.email || email));
 
     if (targetEmail) {
       const qLib = query(collection(db, "library"), where("owner", "==", targetEmail));
@@ -165,12 +166,12 @@ export default function ProfileScreen() {
   // ─── Upload to Cloudinary ──────────────────────────────────────────────────
   const uploadToCloudinary = async (pickedUri: string): Promise<string> => {
     const response = await fetch(pickedUri);
-    const blob     = await response.blob();
-    const data     = new FormData();
+    const blob = await response.blob();
+    const data = new FormData();
     data.append("file", blob);
     data.append("upload_preset", "unsigned_preset");
 
-    const res    = await fetch("https://api.cloudinary.com/v1_1/dz4nwc1yu/image/upload", {
+    const res = await fetch("https://api.cloudinary.com/v1_1/dz4nwc1yu/image/upload", {
       method: "POST", body: data,
     });
     const result = await res.json();
@@ -223,7 +224,7 @@ export default function ProfileScreen() {
 
   const userRatings = userData?.ratings || {};
   const ratingKeys = Object.keys(userRatings);
-  
+
   let totalScore = 0;
   for (const key of ratingKeys) {
     totalScore += Number(userRatings[key] || 0);
@@ -232,19 +233,43 @@ export default function ProfileScreen() {
     ? (totalScore / ratingKeys.length).toFixed(1)
     : 0;
 
-  const myVote = auth.currentUser ? userRatings[auth.currentUser.uid] : null;
+  useEffect(() => {
+    if (auth.currentUser && userRatings && userRatings[auth.currentUser.uid] !== undefined) {
+      setLocalVote(Number(userRatings[auth.currentUser.uid]));
+    } else if (userData) {
+      // فقط إذا تم تحميل بيانات المستخدم وتأكدنا أنه لا يوجد تقييم
+      setLocalVote(null);
+    }
+  }, [userRatings, targetUid, auth.currentUser?.uid, !!userData]);
 
   const handleRate = async (score: number) => {
     if (!auth.currentUser || !targetUid) {
       Alert.alert("خطأ", "يجب تسجيل الدخول للتقييم");
       return;
     }
+    
+    // 1. تثبيت التقييم فوراً في الواجهة
+    setLocalVote(score);
+    
     try {
-      const newRatings = { ...userRatings, [auth.currentUser.uid]: score };
-      await updateDoc(doc(db, "users", targetUid), { ratings: newRatings });
-      Alert.alert("✅", "تم تسجيل التقييم بنجاح!");
-    } catch (e) {
-      Alert.alert("❌", "حدث خطأ أثناء التقييم");
+      // 2. تحديث قاعدة البيانات مباشرة باستخدام dot notation لتجنب أي تعارض في البيانات
+      const ratingsRef = doc(db, "users", targetUid);
+      const updateKey = `ratings.${auth.currentUser.uid}`;
+      
+      await updateDoc(ratingsRef, { [updateKey]: score });
+      console.log("✅ Rating saved successfully:", score);
+    } catch (e: any) {
+      // إذا فشل updateDoc (غالباً لأن المستند غير موجود)، نستخدم setDoc
+      try {
+        const ratingsRef = doc(db, "users", targetUid);
+        await setDoc(ratingsRef, { ratings: { [auth.currentUser.uid]: score } }, { merge: true });
+        console.log("✅ Rating saved successfully via setDoc");
+      } catch (err2) {
+        console.error("❌ Rate error:", err2);
+        const existingVote = userRatings[auth.currentUser.uid];
+        setLocalVote(existingVote ? Number(existingVote) : null);
+        Alert.alert("خطأ", "تعذر حفظ التقييم");
+      }
     }
   };
 
@@ -305,25 +330,32 @@ export default function ProfileScreen() {
             <Text style={styles.ratingScore}>{averageRating} / 5</Text>
             <View style={styles.starsRow}>
               {[1, 2, 3, 4, 5].map(star => {
-                 const displayValue = myVote ? myVote : Math.round(Number(averageRating));
-                 const isSelected = star <= displayValue;
-                 return (
-                   <TouchableOpacity 
-                     key={star} 
-                     disabled={isOwnProfile}
-                     onPress={() => handleRate(star)}
-                   >
-                      <Text style={[styles.star, isSelected ? styles.starFilled : styles.starEmpty]}>
-                        ★
-                      </Text>
-                   </TouchableOpacity>
-                 );
+                // Prioritize local selection, then average
+                const displayValue = localVote !== null ? localVote : Math.round(Number(averageRating));
+                const isSelected = star <= displayValue;
+
+                return (
+                  <TouchableOpacity
+                    key={star}
+                    disabled={isOwnProfile}
+                    onPress={() => handleRate(star)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[
+                      styles.star,
+                      isSelected ? styles.starFilled : styles.starEmpty,
+                      localVote === null && isSelected ? { opacity: 0.6 } : { opacity: 1 }
+                    ]}>
+                      ★
+                    </Text>
+                  </TouchableOpacity>
+                );
               })}
             </View>
             <Text style={styles.ratingCount}>({ratingKeys.length} تقييم)</Text>
             {!isOwnProfile && (
-              <Text style={{fontSize: 10, color: 'rgba(255,255,255,0.9)', marginTop: 4, fontFamily: Fonts.cairoBold}}>
-                {myVote ? `تقييمك المُسجل: ${myVote} ⭐️` : 'اضغط النجوم للتصويت'}
+              <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.9)', marginTop: 4, fontFamily: Fonts.cairoBold }}>
+                {localVote ? `تقييمك المُسجل: ${localVote} ⭐️` : 'اضغط النجوم للتصويت'}
               </Text>
             )}
           </View>
@@ -437,7 +469,7 @@ export default function ProfileScreen() {
 // ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.light.background },
-  center:    { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   header: {
     backgroundColor: Colors.light.primary,
@@ -454,7 +486,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     overflow: 'hidden',
   },
-  avatarImg:    { width: '100%', height: '100%' },
+  avatarImg: { width: '100%', height: '100%' },
   avatarLetter: { fontSize: 35, color: 'white', fontFamily: Fonts.cairoExtraBold },
   avatarOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -468,7 +500,7 @@ const styles = StyleSheet.create({
   },
   changePhotoText: { fontSize: 11, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
 
-  name:      { fontSize: 22, color: 'white', fontFamily: Fonts.cairoBold, marginTop: 10 },
+  name: { fontSize: 22, color: 'white', fontFamily: Fonts.cairoBold, marginTop: 10 },
   emailText: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontFamily: Fonts.cairo, marginTop: 2 },
 
   roleBadge: {
@@ -492,9 +524,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     padding: 15, borderRadius: 20,
   },
-  statBox:     { alignItems: 'center' },
-  statVal:     { fontSize: 20, color: Colors.light.accent, fontFamily: Fonts.cairoExtraBold },
-  statLab:     { fontSize: 10, color: 'white', fontFamily: Fonts.cairo },
+  statBox: { alignItems: 'center' },
+  statVal: { fontSize: 20, color: Colors.light.accent, fontFamily: Fonts.cairoExtraBold },
+  statLab: { fontSize: 10, color: 'white', fontFamily: Fonts.cairo },
   statDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.2)', height: '100%' },
 
   section: {
@@ -512,20 +544,20 @@ const styles = StyleSheet.create({
     padding: 8, borderRadius: 12,
     borderWidth: 1, borderColor: Colors.light.border,
   },
-  miniImg:     { width: '100%', height: 80, borderRadius: 8 },
-  miniTitle:   { fontSize: 10, fontFamily: Fonts.cairoBold, marginTop: 5, textAlign: 'right' },
-  miniPrice:   { fontSize: 10, color: Colors.light.accent, fontFamily: Fonts.cairoBold, textAlign: 'right' },
+  miniImg: { width: '100%', height: 80, borderRadius: 8 },
+  miniTitle: { fontSize: 10, fontFamily: Fonts.cairoBold, marginTop: 5, textAlign: 'right' },
+  miniPrice: { fontSize: 10, color: Colors.light.accent, fontFamily: Fonts.cairoBold, textAlign: 'right' },
   statusBadge: { alignSelf: 'flex-end', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginTop: 4 },
-  statusText:  { fontSize: 8, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
-  bgActive:    { backgroundColor: '#d4f4e0' },
-  bgSold:      { backgroundColor: '#fde8e8' },
-  empty:       { fontSize: 11, color: Colors.light.muted, textAlign: 'center', width: '100%', fontFamily: Fonts.cairo },
+  statusText: { fontSize: 8, fontFamily: Fonts.cairoBold, color: Colors.light.primary },
+  bgActive: { backgroundColor: '#d4f4e0' },
+  bgSold: { backgroundColor: '#fde8e8' },
+  empty: { fontSize: 11, color: Colors.light.muted, textAlign: 'center', width: '100%', fontFamily: Fonts.cairo },
 
-  label:         { fontSize: 11, color: Colors.light.muted, textAlign: 'right', marginBottom: 5, fontFamily: Fonts.cairoBold },
-  input:         { borderBottomWidth: 1, borderBottomColor: Colors.light.border, padding: 8, fontFamily: Fonts.cairo, marginBottom: 20 },
+  label: { fontSize: 11, color: Colors.light.muted, textAlign: 'right', marginBottom: 5, fontFamily: Fonts.cairoBold },
+  input: { borderBottomWidth: 1, borderBottomColor: Colors.light.border, padding: 8, fontFamily: Fonts.cairo, marginBottom: 20 },
   inputDisabled: { color: '#aaa' },
-  saveBtn:       { backgroundColor: Colors.light.primary, padding: 14, borderRadius: 12, alignItems: 'center' },
-  saveBtnText:   { color: 'white', fontFamily: Fonts.cairoBold },
+  saveBtn: { backgroundColor: Colors.light.primary, padding: 14, borderRadius: 12, alignItems: 'center' },
+  saveBtnText: { color: 'white', fontFamily: Fonts.cairoBold },
   logoutBtn: {
     backgroundColor: '#fff5f5', padding: 12, borderRadius: 12,
     alignItems: 'center', marginTop: 15,

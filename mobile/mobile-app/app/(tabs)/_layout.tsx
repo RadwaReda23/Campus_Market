@@ -78,6 +78,10 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>👤</Text>,
         }}
       />
+      <Tabs.Screen
+        name="addProduct"
+        options={{ href: null }}
+      />
     </Tabs>
   );
 }

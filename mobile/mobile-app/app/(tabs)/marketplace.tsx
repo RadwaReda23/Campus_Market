@@ -96,41 +96,29 @@ export default function ProductsScreen() {
 
   const categories = ["الكل", "كتب", "دروس", "ملخصات", "أخرى"];
 
-  /* ================= LOAD PRODUCTS ================= */
+  /* ================= LOAD PRODUCTS (Real-time) ================= */
   useEffect(() => {
-    fetchProducts();
+    setLoading(true);
+    const q = query(collection(db, "products"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]);
+      setLoading(false);
+    }, (err) => {
+      console.error(err);
+      setLoading(false);
+    });
+    return unsub;
   }, []);
 
-  const fetchProducts = async () => {
-    try {
-      setLoading(true);
-      const q = query(
-        collection(db, "products"),
-        orderBy("createdAt", "desc")
-      );
-
-      const snapshot = await getDocs(q);
-      const list = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Product[];
-
-      setProducts(list);
-    } catch (err: any) {
-      console.error("❌ خطأ في تحميل المنتجات:", err);
-      Alert.alert("خطأ", "فشل تحميل المنتجات");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchProducts = () => {}; // kept for refresh button compatibility
 
   /* ================= FILTER PRODUCTS ================= */
   const filteredProducts = products.filter(product => {
     const matchSearch = product.title.toLowerCase().includes(searchText.toLowerCase()) ||
-                       product.seller?.toLowerCase().includes(searchText.toLowerCase());
-    
-    const matchCategory = selectedCategory === "الكل" || 
-                         product.category === selectedCategory;
+      product.seller?.toLowerCase().includes(searchText.toLowerCase());
+
+    const matchCategory = selectedCategory === "الكل" ||
+      product.category === selectedCategory;
 
     return matchSearch && matchCategory;
   });
@@ -248,7 +236,7 @@ export default function ProductsScreen() {
   /* ================= SEND QUICK MESSAGE ================= */
   const sendQuickMessage = async () => {
     if (!selectedProduct || !user) return;
-    
+
     setSendingMessage(true);
     try {
       const chatId = `${selectedProduct.id}_${user.uid}`;
@@ -288,23 +276,15 @@ export default function ProductsScreen() {
   };
 
   /* ================= MANAGE PRODUCT ================= */
-  const handleDeleteProduct = (productId: string) => {
-    Alert.alert("حذف المنتج", "هل أنت متأكد من حذف هذا المنتج نهائياً؟", [
-      { text: "إلغاء", style: "cancel" },
-      {
-        text: "حذف",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteDoc(doc(db, "products", productId));
-            setProducts((prev) => prev.filter((p) => p.id !== productId));
-            Alert.alert("تم", "تم حذف المنتج بنجاح");
-          } catch (err) {
-            Alert.alert("خطأ", "فشل حذف المنتج");
-          }
-        },
-      },
-    ]);
+  const handleDeleteProduct = async (productId: string) => {
+    try {
+      await deleteDoc(doc(db, "products", productId));
+      setProducts((prev) => prev.filter((p) => p.id !== productId));
+      Alert.alert("تم ✅", "تم حذف المنتج");
+    } catch (err: any) {
+      console.error("Delete error:", err);
+      Alert.alert("خطأ", `فشل الحذف: ${err?.message || ''}`);
+    }
   };
 
   const handleToggleStatus = async (productId: string, currentStatus?: string) => {
@@ -321,7 +301,9 @@ export default function ProductsScreen() {
 
   /* ================= RENDER PRODUCT ITEM ================= */
   const renderProduct = ({ item }: { item: Product }) => {
-    const isOwner = item.sellerId === user?.uid;
+    const isOwner =
+      (user?.uid && item.sellerId === user.uid) ||
+      (user?.email && item.seller?.toLowerCase() === user.email?.toLowerCase());
     const isSold = item.status === "sold";
 
     return (
@@ -387,7 +369,12 @@ export default function ProductsScreen() {
     <View style={styles.container}>
       {/* HEADER */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>🛍️ المنتجات</Text>
+        <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={styles.headerTitle}>🛍️ المنتجات</Text>
+          <TouchableOpacity style={styles.addBtn} onPress={() => router.push('/addProduct')}>
+            <Text style={styles.addBtnText}>➕ إضافة منتج</Text>
+          </TouchableOpacity>
+        </View>
         <Text style={styles.headerSubtitle}>
           {filteredProducts.length} منتج
         </Text>
@@ -459,107 +446,107 @@ export default function ProductsScreen() {
       {/* MODAL: PRODUCT DETAILS & QUICK CHAT */}
       {!!selectedProduct && (
         <View style={[StyleSheet.absoluteFill, { zIndex: 1000, elevation: 10 }]}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex: 1}}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
             <View style={styles.modalBg}>
-            <View style={styles.modalContent}>
-              <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedProduct(null)}>
-                <Text style={styles.closeBtnText}>✖</Text>
-              </TouchableOpacity>
-
-              {selectedProduct && (
-                <FlatList
-                  data={productMessages}
-                  keyExtractor={item => item.id}
-                  contentContainerStyle={{ paddingBottom: 20 }}
-                  showsVerticalScrollIndicator={false}
-                  ListHeaderComponent={() => (
-                    <View style={{ paddingBottom: 10, borderBottomWidth: 1, borderColor: "#eee", marginBottom: 10 }}>
-                      <Image source={{ uri: selectedProduct.imageURL }} style={styles.modalImage} />
-                      <View style={styles.modalDetails}>
-                        <Text style={styles.modalTitle}>{selectedProduct.title}</Text>
-                        <Text style={styles.modalPrice}>{selectedProduct.price} ج.م</Text>
-                        <Text style={styles.modalSeller}>البائع: {selectedProduct.seller}</Text>
-                        {selectedProduct.description ? (
-                          <Text style={styles.modalDesc}>{selectedProduct.description}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                  )}
-                  renderItem={({ item }) => {
-                    const isMe = item.senderId === user?.uid;
-                    return (
-                      <View style={[styles.msgBubble, isMe ? styles.msgMe : styles.msgOther]}>
-                        {item.mediaType === "image" && item.mediaURL && (
-                          <TouchableOpacity onPress={() => setPreviewMedia({ uri: item.mediaURL, type: "image" })}>
-                            <Image source={{ uri: item.mediaURL }} style={styles.msgImage} resizeMode="cover" />
-                          </TouchableOpacity>
-                        )}
-
-                        {item.mediaType === "video" && item.mediaURL && (
-                          <TouchableOpacity onPress={() => setPreviewMedia({ uri: item.mediaURL, type: "video" })} style={styles.videoThumb}>
-                            <Text style={styles.videoPlayIcon}>▶️</Text>
-                            <Text style={styles.videoLabel}>اضغط لتشغيل الفيديو</Text>
-                          </TouchableOpacity>
-                        )}
-
-                        {!!item.text && (
-                          <Text style={[styles.msgText, isMe ? styles.txtMe : styles.txtOther]}>{item.text}</Text>
-                        )}
-                      </View>
-                    );
-                  }}
-                />
-              )}
-
-              <View style={styles.quickMessageContainer}>
-                <TouchableOpacity onPress={showMediaOptions} style={styles.mediaBtn} disabled={uploadingMedia}>
-                  {uploadingMedia ? (
-                    <ActivityIndicator size="small" color="#1a3a2a" />
-                  ) : (
-                    <Text style={{ fontSize: 22 }}>📎</Text>
-                  )}
+              <View style={styles.modalContent}>
+                <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedProduct(null)}>
+                  <Text style={styles.closeBtnText}>✖</Text>
                 </TouchableOpacity>
-                <TextInput
-                  style={styles.quickMessageInput}
-                  value={quickMessage}
-                  onChangeText={setQuickMessage}
-                  multiline
-                  placeholder="اكتب رسالة..."
-                />
-                <TouchableOpacity style={styles.sendBtn} onPress={sendQuickMessage} disabled={sendingMessage}>
-                  {sendingMessage ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={styles.sendBtnText}>إرسال</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
 
-            {/* Media Menu */}
-            {mediaMenuVisible && (
-              <TouchableOpacity style={styles.mediaMenuOverlay} activeOpacity={1} onPress={() => setMediaMenuVisible(false)}>
-                <View style={styles.mediaMenuBox}>
-                  <Text style={styles.mediaMenuTitle}>اختر المرفق</Text>
-                  
-                  <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); pickImage(); }}>
-                    <Text style={styles.mediaMenuBtnText}>📷 صورة من المعرض</Text>
+                {selectedProduct && (
+                  <FlatList
+                    data={productMessages}
+                    keyExtractor={item => item.id}
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                    showsVerticalScrollIndicator={false}
+                    ListHeaderComponent={() => (
+                      <View style={{ paddingBottom: 10, borderBottomWidth: 1, borderColor: "#eee", marginBottom: 10 }}>
+                        <Image source={{ uri: selectedProduct.imageURL }} style={styles.modalImage} />
+                        <View style={styles.modalDetails}>
+                          <Text style={styles.modalTitle}>{selectedProduct.title}</Text>
+                          <Text style={styles.modalPrice}>{selectedProduct.price} ج.م</Text>
+                          <Text style={styles.modalSeller}>البائع: {selectedProduct.seller}</Text>
+                          {selectedProduct.description ? (
+                            <Text style={styles.modalDesc}>{selectedProduct.description}</Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    )}
+                    renderItem={({ item }) => {
+                      const isMe = item.senderId === user?.uid;
+                      return (
+                        <View style={[styles.msgBubble, isMe ? styles.msgMe : styles.msgOther]}>
+                          {item.mediaType === "image" && item.mediaURL && (
+                            <TouchableOpacity onPress={() => setPreviewMedia({ uri: item.mediaURL, type: "image" })}>
+                              <Image source={{ uri: item.mediaURL }} style={styles.msgImage} resizeMode="cover" />
+                            </TouchableOpacity>
+                          )}
+
+                          {item.mediaType === "video" && item.mediaURL && (
+                            <TouchableOpacity onPress={() => setPreviewMedia({ uri: item.mediaURL, type: "video" })} style={styles.videoThumb}>
+                              <Text style={styles.videoPlayIcon}>▶️</Text>
+                              <Text style={styles.videoLabel}>اضغط لتشغيل الفيديو</Text>
+                            </TouchableOpacity>
+                          )}
+
+                          {!!item.text && (
+                            <Text style={[styles.msgText, isMe ? styles.txtMe : styles.txtOther]}>{item.text}</Text>
+                          )}
+                        </View>
+                      );
+                    }}
+                  />
+                )}
+
+                <View style={styles.quickMessageContainer}>
+                  <TouchableOpacity onPress={showMediaOptions} style={styles.mediaBtn} disabled={uploadingMedia}>
+                    {uploadingMedia ? (
+                      <ActivityIndicator size="small" color="#1a3a2a" />
+                    ) : (
+                      <Text style={{ fontSize: 22 }}>📎</Text>
+                    )}
                   </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); pickVideo(); }}>
-                    <Text style={styles.mediaMenuBtnText}>🎥 فيديو من المعرض</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); openCamera(); }}>
-                    <Text style={styles.mediaMenuBtnText}>📸 كاميرا</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={[styles.mediaMenuBtn, styles.mediaMenuCancelBtn]} onPress={() => setMediaMenuVisible(false)}>
-                    <Text style={styles.mediaMenuCancelText}>إلغاء</Text>
+                  <TextInput
+                    style={styles.quickMessageInput}
+                    value={quickMessage}
+                    onChangeText={setQuickMessage}
+                    multiline
+                    placeholder="اكتب رسالة..."
+                  />
+                  <TouchableOpacity style={styles.sendBtn} onPress={sendQuickMessage} disabled={sendingMessage}>
+                    {sendingMessage ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.sendBtnText}>إرسال</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
-              </TouchableOpacity>
-            )}
+              </View>
+
+              {/* Media Menu */}
+              {mediaMenuVisible && (
+                <TouchableOpacity style={styles.mediaMenuOverlay} activeOpacity={1} onPress={() => setMediaMenuVisible(false)}>
+                  <View style={styles.mediaMenuBox}>
+                    <Text style={styles.mediaMenuTitle}>اختر المرفق</Text>
+
+                    <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); pickImage(); }}>
+                      <Text style={styles.mediaMenuBtnText}>📷 صورة من المعرض</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); pickVideo(); }}>
+                      <Text style={styles.mediaMenuBtnText}>🎥 فيديو من المعرض</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.mediaMenuBtn} onPress={() => { setMediaMenuVisible(false); openCamera(); }}>
+                      <Text style={styles.mediaMenuBtnText}>📸 كاميرا</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={[styles.mediaMenuBtn, styles.mediaMenuCancelBtn]} onPress={() => setMediaMenuVisible(false)}>
+                      <Text style={styles.mediaMenuCancelText}>إلغاء</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              )}
 
             </View>
           </KeyboardAvoidingView>
@@ -570,21 +557,21 @@ export default function ProductsScreen() {
       {!!previewMedia && (
         <View style={[StyleSheet.absoluteFill, { zIndex: 2000, elevation: 20 }]}>
           <View style={styles.previewOverlay}>
-          <TouchableOpacity style={styles.previewClose} onPress={() => setPreviewMedia(null)}>
-            <Text style={styles.previewCloseText}>✕</Text>
-          </TouchableOpacity>
-          {previewMedia?.type === "image" && (
-            <Image source={{ uri: previewMedia.uri }} style={styles.previewImage} resizeMode="contain" />
-          )}
-          {previewMedia?.type === "video" && (
-            <Video
-              source={{ uri: previewMedia.uri }}
-              style={styles.previewVideo}
-              useNativeControls
-              resizeMode={"contain" as any}
-              shouldPlay
-            />
-          )}
+            <TouchableOpacity style={styles.previewClose} onPress={() => setPreviewMedia(null)}>
+              <Text style={styles.previewCloseText}>✕</Text>
+            </TouchableOpacity>
+            {previewMedia?.type === "image" && (
+              <Image source={{ uri: previewMedia.uri }} style={styles.previewImage} resizeMode="contain" />
+            )}
+            {previewMedia?.type === "video" && (
+              <Video
+                source={{ uri: previewMedia.uri }}
+                style={styles.previewVideo}
+                useNativeControls
+                resizeMode={"contain" as any}
+                shouldPlay
+              />
+            )}
           </View>
         </View>
       )}
@@ -615,6 +602,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#c8a84b",
     marginTop: 4,
+  },
+
+  addBtn: {
+    backgroundColor: "#27ae60",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  addBtnText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 12,
   },
 
   searchContainer: {
