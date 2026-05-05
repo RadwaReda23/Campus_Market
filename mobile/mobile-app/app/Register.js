@@ -15,11 +15,11 @@ export default function SignUp() {
   const handleSignUp = async () => {
     setError("");
     if (!username || !email || !password || !confirmPassword) {
-      setError("All fields are required");
+      setError("جميع الحقول مطلوبة");
       return;
     }
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError("كلمتا المرور غير متطابقتين");
       return;
     }
     try {
@@ -34,17 +34,17 @@ export default function SignUp() {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.title}>Sign Up</Text>
-        <TextInput placeholder="Username" value={username} onChangeText={setUsername} style={styles.input} />
-        <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" />
-        <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={styles.input} secureTextEntry />
-        <TextInput placeholder="Confirm Password" value={confirmPassword} onChangeText={setConfirmPassword} style={styles.input} secureTextEntry />
+        <Text style={styles.title}>إنشاء حساب</Text>
+        <TextInput placeholder="اسم المستخدم" value={username} onChangeText={setUsername} style={styles.input} />
+        <TextInput placeholder="البريد الإلكتروني" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" />
+        <TextInput placeholder="كلمة المرور" value={password} onChangeText={setPassword} style={styles.input} secureTextEntry />
+        <TextInput placeholder="تأكيد كلمة المرور" value={confirmPassword} onChangeText={setConfirmPassword} style={styles.input} secureTextEntry />
         {error ? <Text style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={handleSignUp}>
-          <Text style={styles.buttonText}>Sign Up</Text>
+          <Text style={styles.buttonText}>إنشاء حساب</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push("/login")} style={{ marginTop: 15 }}>
-          <Text style={styles.linkText}>Already have an account? Login</Text>
+          <Text style={styles.linkText}>لديك حساب بالفعل؟ سجّل الدخول</Text>
         </TouchableOpacity>
       </View>
     </View>
