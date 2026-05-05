@@ -13,7 +13,7 @@ export default function Login() {
   const handleLogin = async () => {
     setMessage("");
     if (!email || !password) {
-      setMessage("Please enter email and password");
+      setMessage("من فضلك أدخل البريد الإلكتروني وكلمة المرور");
       return;
     }
     try {
@@ -27,10 +27,10 @@ export default function Login() {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Login to your account</Text>
+        <Text style={styles.title}>مرحباً بعودتك</Text>
+        <Text style={styles.subtitle}>سجّل الدخول إلى حسابك</Text>
         <TextInput
-          placeholder="Email"
+          placeholder="البريد الإلكتروني"
           value={email}
           onChangeText={setEmail}
           style={styles.input}
@@ -38,7 +38,7 @@ export default function Login() {
           autoCapitalize="none"
         />
         <TextInput
-          placeholder="Password"
+          placeholder="كلمة المرور"
           value={password}
           onChangeText={setPassword}
           style={styles.input}
@@ -46,13 +46,13 @@ export default function Login() {
         />
         {message ? <Text style={styles.message}>{message}</Text> : null}
         <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Login</Text>
+          <Text style={styles.buttonText}>تسجيل الدخول</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push("/ForgetPassword")} style={{ marginTop: 15 }}>
-          <Text style={styles.linkText}>Forgot Password?</Text>
+          <Text style={styles.linkText}>نسيت كلمة المرور؟</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push("/Register")} style={{ marginTop: 10 }}>
-          <Text style={styles.linkText}>Don't have an account? Sign Up</Text>
+          <Text style={styles.linkText}>ليس لديك حساب؟ سجّل الآن</Text>
         </TouchableOpacity>
       </View>
     </View>
