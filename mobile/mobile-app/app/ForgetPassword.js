@@ -14,7 +14,7 @@ export default function ForgetPassword() {
     setSuccess(false);
 
     if (!email) {
-      setMessage("Please enter your email");
+      setMessage("من فضلك أدخل بريدك الإلكتروني");
       return;
     }
 
@@ -22,10 +22,10 @@ export default function ForgetPassword() {
       await sendPasswordResetEmail(auth, email.trim());
 
       setSuccess(true);
-      setMessage("Password reset email sent! Check your inbox.");
+      setMessage("تم إرسال رابط إعادة تعيين كلمة المرور! تحقق من بريدك الوارد.");
     } catch (err) {
       if (err.code === "auth/user-not-found") {
-        setMessage("Email not found");
+        setMessage("البريد الإلكتروني غير موجود");
       } else {
         setMessage(err.message);
       }
@@ -36,11 +36,11 @@ export default function ForgetPassword() {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.title}>Forget Password</Text>
-        <Text style={styles.subtitle}>Enter your email to reset your password</Text>
+        <Text style={styles.title}>نسيت كلمة المرور</Text>
+        <Text style={styles.subtitle}>أدخل بريدك الإلكتروني لإعادة تعيين كلمة المرور</Text>
 
         <TextInput
-          placeholder="Enter your email"
+          placeholder="أدخل بريدك الإلكتروني"
           value={email}
           onChangeText={setEmail}
           style={styles.input}
@@ -55,15 +55,15 @@ export default function ForgetPassword() {
         ) : null}
 
         <TouchableOpacity style={styles.button} onPress={handleReset}>
-          <Text style={styles.buttonText}>Reset Password</Text>
+          <Text style={styles.buttonText}>إعادة تعيين كلمة المرور</Text>
         </TouchableOpacity>
 
-        {/* Back to Login */}
+        {/* العودة إلى تسجيل الدخول */}
         <TouchableOpacity
           onPress={() => router.push("/login")}
           style={{ marginTop: 15 }}
         >
-          <Text style={styles.linkText}>Back to Login</Text>
+          <Text style={styles.linkText}>العودة إلى تسجيل الدخول</Text>
         </TouchableOpacity>
       </View>
     </View>
