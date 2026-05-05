@@ -79,6 +79,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="reviews"
+        options={{
+          title: 'الآراء',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>⭐</Text>,
+        }}
+      />
+      <Tabs.Screen
         name="addProduct"
         options={{ href: null }}
       />
