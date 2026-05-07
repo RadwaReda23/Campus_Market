@@ -12,7 +12,7 @@ import {
 import { auth, db } from '../firebase';
 import {
   collection, query, where,
-  doc, updateDoc, onSnapshot
+  doc, updateDoc, onSnapshot, getDocs
 } from 'firebase/firestore';
 import { Colors, Fonts } from '@/constants/theme';
 
@@ -193,31 +193,43 @@ export default function ProfileScreen() {
     }
   };
 
-  const userRatings = userData?.ratings || {};
-  const ratingKeys = Object.keys(userRatings);
+  const [averageRating, setAverageRating] = useState<number | string>(0);
+  const [ratingCount, setRatingCount] = useState(0);
+  const [myVote, setMyVote] = useState<number | null>(null);
 
-  let totalScore = 0;
-  for (const key of ratingKeys) {
-    totalScore += Number(userRatings[key] || 0);
-  }
-  const averageRating = ratingKeys.length > 0
-    ? (totalScore / ratingKeys.length).toFixed(1)
-    : 0;
+  const fetchRatings = async () => {
+    if (!targetUid) return;
+    try {
+      const ratingsQuery = query(collection(db, "ratings"), where("ratedUserId", "==", targetUid));
+      const snap = await getDocs(ratingsQuery);
+      if (snap.empty) {
+        setAverageRating(0);
+        setRatingCount(0);
+        setMyVote(null);
+        return;
+      }
+      let total = 0;
+      let mVote = null;
+      snap.forEach(d => {
+        total += d.data().score || 0;
+        if (auth.currentUser && d.data().raterId === auth.currentUser.uid) {
+          mVote = d.data().score;
+        }
+      });
+      setAverageRating((total / snap.size).toFixed(1));
+      setRatingCount(snap.size);
+      setMyVote(mVote);
+    } catch (err) {
+      console.log("Fetch ratings err", err);
+    }
+  };
 
-  const myVote = auth.currentUser ? userRatings[auth.currentUser.uid] : null;
+  useEffect(() => {
+    fetchRatings();
+  }, [targetUid, auth.currentUser?.uid]);
 
   const handleRate = async (score: number) => {
-    if (!auth.currentUser || !targetUid) {
-      Alert.alert("خطأ", "يجب تسجيل الدخول للتقييم");
-      return;
-    }
-    try {
-      const newRatings = { ...userRatings, [auth.currentUser.uid]: score };
-      await updateDoc(doc(db, "users", targetUid), { ratings: newRatings });
-      Alert.alert("✅", "تم تسجيل التقييم بنجاح!");
-    } catch (e) {
-      Alert.alert("❌", "حدث خطأ أثناء التقييم");
-    }
+    // Cannot rate own profile.
   };
 
   // ─── Loading ───────────────────────────────────────────────────────────────
@@ -292,7 +304,7 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
-            <Text style={styles.ratingCount}>({ratingKeys.length} تقييم)</Text>
+            <Text style={styles.ratingCount}>({ratingCount} تقييم)</Text>
             {!isOwnProfile && (
               <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.9)', marginTop: 4, fontFamily: Fonts.cairoBold }}>
                 {myVote ? `تقييمك المُسجل: ${myVote} ⭐️` : 'اضغط النجوم للتصويت'}

@@ -51,46 +51,62 @@ function RateModal({ targetUser, onClose, currentUser }) {
   const [score, setScore] = useState(0);
   const [comment, setComment] = useState("");
   const [loading, setLoading] = useState(false);
+  const [existingRatingId, setExistingRatingId] = useState(null);
+
+  // تحميل التقييم القديم لو موجود 
+  useEffect(() => {
+    const loadExisting = async () => {
+      if (!currentUser?.uid) return;
+      try {
+        const q = query(
+          collection(db, "ratings"),
+          where("raterId", "==", currentUser.uid)
+        );
+        const snap = await getDocs(q);
+        const found = snap.docs.find(d => d.data().ratedUserId === targetUser.uid);
+        if (found) {
+          setExistingRatingId(found.id);
+          setScore(found.data().score || 0);
+          setComment(found.data().comment || "");
+        }
+      } catch (err) { console.error("Load rating error:", err); }
+    };
+    loadExisting();
+  }, [currentUser, targetUser.uid]);
 
   const handleSubmit = async () => {
+    if (!currentUser?.uid) {
+      alert("يرجى تسجيل الدخول أولاً للتقييم");
+      return;
+    }
     if (score === 0) { alert("اختر عدد النجوم أولاً"); return; }
     setLoading(true);
     try {
-      // إضافة التقييم في ratings collection
-      await addDoc(collection(db, "ratings"), {
-        raterId: currentUser.uid,
-        raterName: currentUser.displayName || currentUser.email,
-        ratedUserId: targetUser.uid,
-        score,
-        comment,
-        createdAt: new Date(),
-      });
+      const safeName = currentUser.displayName || currentUser.email || "مستخدم";
+      if (existingRatingId) {
+        // تحديث التقييم القديم باستخدام updateDoc
+        await updateDoc(doc(db, "ratings", existingRatingId), {
+          score,
+          comment,
+          updatedAt: new Date(),
+        });
+      } else {
+        // إضافة تقييم جديد
+        await addDoc(collection(db, "ratings"), {
+          raterId: currentUser.uid,
+          raterName: safeName,
+          ratedUserId: targetUser.uid,
+          score,
+          comment,
+          createdAt: new Date(),
+        });
+      }
 
-      // حساب متوسط التقييم من كل التقييمات
-      const ratingsQuery = query(
-        collection(db, "ratings"),
-        where("ratedUserId", "==", targetUser.uid)
-      );
-      const ratingsSnap = await getDocs(ratingsQuery);
-      let totalSum = 0;
-      let totalCount = 0;
-      ratingsSnap.docs.forEach(d => {
-        totalSum += d.data().score || 0;
-        totalCount++;
-      });
-
-      // تحديث بيانات المستخدم باستخدام setDoc مع merge (بيشتغل حتى لو المستند مش موجود)
-      const userRef = doc(db, "users", targetUser.uid);
-      await setDoc(userRef, {
-        ratingSum: totalSum,
-        ratingCount: totalCount,
-      }, { merge: true });
-
-      alert("شكراً على تقييمك ✅");
+      alert(existingRatingId ? "تم تحديث تقييمك ✅" : "شكراً على تقييمك ✅");
       onClose();
     } catch (err) {
-      console.error(err);
-      alert("حصل خطأ ❌");
+      console.error("Rating submit error:", err);
+      alert("حصل تفاصيل الخطأ: " + err.code + " \n " + err.message + "\n يرجى إرسال هذه الرسالة لي.");
     } finally {
       setLoading(false);
     }
@@ -178,10 +194,6 @@ export default function ProfilePage({ overrideUserId, onBack }) {
         
         if (userSnap.exists()) {
           firestoreData = userSnap.data();
-          const sum = firestoreData.ratingSum || 0;
-          const count = firestoreData.ratingCount || 0;
-          setAvgRating(count > 0 ? (sum / count) : 0);
-          setRatingCount(count);
         } else if (targetUid === authenticatedUser?.uid) {
            // If it's the current user and doc doesn't exist, we use auth info
            firestoreData = {
@@ -201,6 +213,19 @@ export default function ProfilePage({ overrideUserId, onBack }) {
         
         if (targetUid === authenticatedUser?.uid) {
           setEditName(firestoreData.displayName || authenticatedUser.displayName || "");
+        }
+
+        // حساب التقييم مباشرة من ratings collection
+        const ratingsQuery = query(collection(db, "ratings"), where("ratedUserId", "==", targetUid));
+        const ratingsSnap = await getDocs(ratingsQuery);
+        if (ratingsSnap.size > 0) {
+          let sum = 0;
+          ratingsSnap.docs.forEach(d => { sum += d.data().score || 0; });
+          setAvgRating(sum / ratingsSnap.size);
+          setRatingCount(ratingsSnap.size);
+        } else {
+          setAvgRating(0);
+          setRatingCount(0);
         }
 
         // جيب منتجات ومكتبة المستخدم المستهدف

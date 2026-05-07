@@ -12,7 +12,7 @@ import {
 import { auth, db } from './firebase';
 import {
   collection, query, where,
-  doc, updateDoc, onSnapshot, getDocs, setDoc
+  doc, updateDoc, onSnapshot, getDocs, setDoc, addDoc
 } from 'firebase/firestore';
 import { Colors, Fonts } from '@/constants/theme';
 
@@ -222,6 +222,7 @@ export default function ProfileScreen() {
     }
   };
 
+<<<<<<< Updated upstream
   const userRatings = userData?.ratings || {};
   const ratingKeys = Object.keys(userRatings);
 
@@ -241,6 +242,47 @@ export default function ProfileScreen() {
       setLocalVote(null);
     }
   }, [userRatings, targetUid, auth.currentUser?.uid, !!userData]);
+=======
+  const [averageRating, setAverageRating] = useState<number | string>(0);
+  const [ratingCount, setRatingCount] = useState(0);
+  const [myVote, setMyVote] = useState<number | null>(null);
+  const [existingRatingId, setExistingRatingId] = useState<string | null>(null);
+
+  const fetchRatings = async () => {
+    if (!targetUid) return;
+    try {
+      const ratingsQuery = query(collection(db, "ratings"), where("ratedUserId", "==", targetUid));
+      const snap = await getDocs(ratingsQuery);
+      if (snap.empty) {
+        setAverageRating(0);
+        setRatingCount(0);
+        setMyVote(null);
+        setExistingRatingId(null);
+        return;
+      }
+      let total = 0;
+      let mVote = null;
+      let mId = null;
+      snap.forEach(d => {
+        total += d.data().score || 0;
+        if (auth.currentUser && d.data().raterId === auth.currentUser.uid) {
+          mVote = d.data().score;
+          mId = d.id;
+        }
+      });
+      setAverageRating((total / snap.size).toFixed(1));
+      setRatingCount(snap.size);
+      setMyVote(mVote);
+      setExistingRatingId(mId);
+    } catch (err) {
+      console.log("Fetch ratings err", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchRatings();
+  }, [targetUid, auth.currentUser?.uid]);
+>>>>>>> Stashed changes
 
   const handleRate = async (score: number) => {
     if (!auth.currentUser || !targetUid) {
@@ -252,6 +294,7 @@ export default function ProfileScreen() {
     setLocalVote(score);
     
     try {
+<<<<<<< Updated upstream
       // 2. تحديث قاعدة البيانات مباشرة باستخدام dot notation لتجنب أي تعارض في البيانات
       const ratingsRef = doc(db, "users", targetUid);
       const updateKey = `ratings.${auth.currentUser.uid}`;
@@ -270,6 +313,30 @@ export default function ProfileScreen() {
         setLocalVote(existingVote ? Number(existingVote) : null);
         Alert.alert("خطأ", "تعذر حفظ التقييم");
       }
+=======
+      if (existingRatingId) {
+        await updateDoc(doc(db, "ratings", existingRatingId), {
+          score,
+          createdAt: new Date(),
+        });
+      } else {
+        const res = await addDoc(collection(db, "ratings"), {
+          raterId: auth.currentUser.uid,
+          raterName: auth.currentUser.displayName || auth.currentUser.email || "مستخدم",
+          ratedUserId: targetUid,
+          score,
+          comment: "",
+          createdAt: new Date(),
+        });
+        setExistingRatingId(res.id);
+      }
+      setMyVote(score);
+      await fetchRatings();
+      Alert.alert("✅", existingRatingId ? "تم تحديث التقييم بنجاح!" : "تم تسجيل التقييم بنجاح!");
+    } catch (e) {
+      console.log("Rating error", e);
+      Alert.alert("❌", "حدث خطأ أثناء التقييم");
+>>>>>>> Stashed changes
     }
   };
 
@@ -352,7 +419,7 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
-            <Text style={styles.ratingCount}>({ratingKeys.length} تقييم)</Text>
+            <Text style={styles.ratingCount}>({ratingCount} تقييم)</Text>
             {!isOwnProfile && (
               <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.9)', marginTop: 4, fontFamily: Fonts.cairoBold }}>
                 {localVote ? `تقييمك المُسجل: ${localVote} ⭐️` : 'اضغط النجوم للتصويت'}
