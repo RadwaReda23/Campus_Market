@@ -76,6 +76,29 @@ export default function ReviewsPage() {
     }
   };
 
+  // ─── Delete Review ─────────────────────────────────────────────────────────
+  const handleDelete = async (id, userId) => {
+    if (userId !== auth.currentUser?.uid) return;
+    if (!window.confirm("هل أنت متأكد من حذف هذا التعليق؟")) return;
+
+    try {
+      // الحذف من السيرفر
+      const { deleteDoc, doc } = await import("firebase/firestore");
+      await deleteDoc(doc(db, "feedback", id));
+    } catch (error) {
+      console.error("Server delete failed:", error);
+    }
+
+    // الحذف من التخزين المحلي دائماً
+    const local = JSON.parse(localStorage.getItem("my_reviews") || "[]");
+    const updatedLocal = local.filter(r => r.id !== id);
+    localStorage.setItem("my_reviews", JSON.stringify(updatedLocal));
+
+    // تحديث الواجهة
+    setReviews(prev => prev.filter(r => r.id !== id));
+    alert("تم حذف التعليق بنجاح");
+  };
+
   return (
     <div style={containerStyle}>
       <h2 style={headerTitle}>🌟 آراء وتقييمات المستخدمين</h2>
@@ -147,12 +170,23 @@ export default function ReviewsPage() {
                       {"★".repeat(item.rating)}{"☆".repeat(5 - item.rating)}
                     </div>
                   </div>
-                  <div style={dateStyle}>
-                    {item.createdAt && 
-                      (item.createdAt.toDate 
-                        ? item.createdAt.toDate() 
-                        : new Date(item.createdAt)).toLocaleDateString("ar-EG")
-                    }
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                    <div style={dateStyle}>
+                      {item.createdAt && 
+                        (item.createdAt.toDate 
+                          ? item.createdAt.toDate() 
+                          : new Date(item.createdAt)).toLocaleDateString("ar-EG")
+                      }
+                    </div>
+                    {auth.currentUser?.uid === item.userId && (
+                      <button 
+                        onClick={() => handleDelete(item.id, item.userId)}
+                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "2px" }}
+                        title="حذف التعليق"
+                      >
+                        🗑️
+                      </button>
+                    )}
                   </div>
                 </div>
                 <p style={commentStyle}>{item.comment}</p>
