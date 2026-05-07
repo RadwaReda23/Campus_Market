@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "../firebase";
-import { collection, addDoc, getDocs, query, orderBy, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, orderBy, deleteDoc, doc } from "firebase/firestore";
 import { COLORS } from "../constants";
 
 export default function ReviewsPage() {
@@ -23,14 +23,14 @@ export default function ReviewsPage() {
 
     // قراءة التعليقات المحلية دائماً ودمجها
     const localReviews = JSON.parse(localStorage.getItem("my_reviews") || "[]");
-    
+
     // دمج وتصفية التكرار (لو السيرفر اشتغل لاحقاً)
     const combined = [...localReviews, ...serverReviews];
     const unique = Array.from(new Map(combined.map(item => [item.userId + item.comment, item])).values());
-    
+
     // الترتيب حسب التاريخ
     unique.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    
+
     setReviews(unique);
     setLoading(false);
   };
@@ -49,7 +49,7 @@ export default function ReviewsPage() {
     }
 
     setSubmitting(true);
-    
+
     const reviewData = {
       userId: auth.currentUser.uid,
       userName: auth.currentUser.displayName || "مستخدم",
@@ -83,7 +83,6 @@ export default function ReviewsPage() {
 
     try {
       // الحذف من السيرفر
-      const { deleteDoc, doc } = await import("firebase/firestore");
       await deleteDoc(doc(db, "feedback", id));
     } catch (error) {
       console.error("Server delete failed:", error);
@@ -102,11 +101,11 @@ export default function ReviewsPage() {
   return (
     <div style={containerStyle}>
       <h2 style={headerTitle}>🌟 آراء وتقييمات المستخدمين</h2>
-      
+
       {/* Form Card */}
       <div style={formCardStyle}>
         <h3 style={formTitleStyle}>شاركنا تجربتك في الموقع</h3>
-        
+
         <div style={starsContainer}>
           {[1, 2, 3, 4, 5].map((star) => (
             <span
@@ -131,7 +130,7 @@ export default function ReviewsPage() {
           style={textareaStyle}
         />
 
-        <button 
+        <button
           onClick={handleSubmit}
           disabled={submitting}
           style={{
@@ -147,7 +146,7 @@ export default function ReviewsPage() {
       {/* Reviews List */}
       <div style={listContainer}>
         <h3 style={listTitleStyle}>آراء المستخدمين ({reviews.length})</h3>
-        
+
         {loading ? (
           <div style={{ textAlign: "center", padding: "20px", color: COLORS.muted }}>جاري التحميل...</div>
         ) : reviews.length === 0 ? (
@@ -172,14 +171,14 @@ export default function ReviewsPage() {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
                     <div style={dateStyle}>
-                      {item.createdAt && 
-                        (item.createdAt.toDate 
-                          ? item.createdAt.toDate() 
+                      {item.createdAt &&
+                        (item.createdAt.toDate
+                          ? item.createdAt.toDate()
                           : new Date(item.createdAt)).toLocaleDateString("ar-EG")
                       }
                     </div>
                     {auth.currentUser?.uid === item.userId && (
-                      <button 
+                      <button
                         onClick={() => handleDelete(item.id, item.userId)}
                         style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "2px" }}
                         title="حذف التعليق"

@@ -4,18 +4,17 @@ import {
   TouchableOpacity, StyleSheet, Image,
   Alert, ActivityIndicator, Dimensions
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth, db } from '../firebase';
 import {
   collection, query, orderBy,
-  doc, addDoc, onSnapshot, getDoc, serverTimestamp
+  doc, addDoc, onSnapshot, deleteDoc, getDocs
 } from 'firebase/firestore';
 import { Colors, Fonts } from '@/constants/theme';
 
 const { width } = Dimensions.get('window');
 
 export default function SiteReviewsScreen() {
-  const router = useRouter();
   const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState('');
@@ -23,68 +22,133 @@ export default function SiteReviewsScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   // ─── Fetch Reviews ──────────────────────────────────────────────────────────
-  useEffect(() => {
+  const fetchReviews = async () => {
+    let serverReviews: any[] = [];
     try {
-      const q = query(collection(db, "site_reviews"));
-      const unsub = onSnapshot(q, 
-        (snapshot) => {
-          const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          setReviews(list);
-          setLoading(false);
-        },
-        (error) => {
-          console.error("Firestore onSnapshot error:", error);
-          setLoading(false);
-          // Alert.alert("خطأ", "فشل تحميل التقييمات. تأكد من إعدادات Firestore.");
-        }
-      );
-      return () => unsub();
+      // جلب من السيرفر
+      const q = query(collection(db, "site_reviews"), orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(q);
+      serverReviews = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (error) {
+      console.error("Firestore read failed:", error);
+    }
+
+    // جلب من التخزين المحلي
+    try {
+      const localData = await AsyncStorage.getItem("my_mobile_reviews");
+      const localReviews = localData ? JSON.parse(localData) : [];
+      
+      // دمج وتصفية التكرار
+      const combined = [...localReviews, ...serverReviews];
+      const unique = Array.from(new Map(combined.map((item: any) => [item.userId + item.comment, item])).values()) as any[];
+      
+      // الترتيب
+      unique.sort((a: any, b: any) => {
+        const dateA = typeof a.createdAt === 'number' ? a.createdAt : a.createdAt?.toMillis?.() || 0;
+        const dateB = typeof b.createdAt === 'number' ? b.createdAt : b.createdAt?.toMillis?.() || 0;
+        return dateB - dateA;
+      });
+
+      setReviews(unique);
     } catch (err) {
-      console.error("Firestore Query error:", err);
+      console.error("AsyncStorage read error:", err);
+    } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    fetchReviews();
+    
+    // اشتراك للبحث عن تحديثات السيرفر
+    const q = query(collection(db, "site_reviews"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(q, (snapshot) => {
+      fetchReviews();
+    });
+    return () => unsub();
   }, []);
 
-  const handleSubmit = () => {
-    if (submitting) return;
-    
+  // ─── Submit Review ─────────────────────────────────────────────────────────
+  const handleSubmit = async () => {
     if (!auth.currentUser) {
-      Alert.alert("تنبيه", "يجب تسجيل الدخول لتتمكن من إضافة تقييم");
+      Alert.alert("خطأ", "يجب تسجيل الدخول أولاً");
       return;
     }
-    if (rating === 0) {
-      Alert.alert("تنبيه", "يرجى اختيار عدد النجوم (اضغط على النجوم)");
-      return;
-    }
-    if (comment.trim().length < 2) {
-      Alert.alert("تنبيه", "يرجى كتابة رأيك في الخانة المخصصة");
+    if (rating === 0 || comment.trim().length < 2) {
+      Alert.alert("تنبيه", "يرجى اختيار التقييم وكتابة رأيك");
       return;
     }
 
     setSubmitting(true);
-    
     const reviewData = {
-      userId: auth.currentUser?.uid || "unknown",
-      userName: auth.currentUser?.displayName || "مستخدم",
-      userPhoto: auth.currentUser?.photoURL || null,
+      userId: auth.currentUser.uid,
+      userName: auth.currentUser.displayName || "مستخدم",
+      userPhoto: auth.currentUser.photoURL || null,
       rating: rating,
       comment: comment.trim(),
       createdAt: Date.now()
     };
 
-    // Optimistic UI update
-    setReviews([ { id: Math.random().toString(), ...reviewData }, ...reviews ]);
-    setComment('');
-    setRating(0);
-    Alert.alert("نجاح", "تم تسجيل تقييمك");
+    // حفظ محلي فوري
+    try {
+      const localData = await AsyncStorage.getItem("my_mobile_reviews");
+      const local = localData ? JSON.parse(localData) : [];
+      local.unshift({ id: "local-" + Date.now(), ...reviewData });
+      await AsyncStorage.setItem("my_mobile_reviews", JSON.stringify(local));
+    } catch (err) {
+      console.error("AsyncStorage save error:", err);
+    }
 
-    addDoc(collection(db, "site_reviews"), reviewData)
-      .catch((error) => {
-        console.error("Submission failed:", error);
-      })
-      .finally(() => {
-        setSubmitting(false);
-      });
+    // محاولة مزامنة مع السيرفر في الخلفية
+    try {
+      await addDoc(collection(db, "site_reviews"), reviewData);
+      Alert.alert("نجاح", "تم تسجيل تقييمك");
+    } catch (error) {
+      console.error("Submission failed, but saved locally:", error);
+      Alert.alert("تنبيه", "تم حفظ التقييم على جهازك (سيرفع للسيرفر لاحقاً)");
+    } finally {
+      setComment("");
+      setRating(0);
+      setSubmitting(false);
+      fetchReviews();
+    }
+  };
+
+  const handleDelete = async (id: string, userId: string) => {
+    if (userId !== auth.currentUser?.uid) return;
+
+    Alert.alert(
+      "حذف التعليق",
+      "هل أنت متأكد من حذف هذا التعليق؟",
+      [
+        { text: "إلغاء", style: "cancel" },
+        {
+          text: "حذف",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              // حذف من السيرفر
+              if (!id.startsWith("local-")) {
+                await deleteDoc(doc(db, "site_reviews", id));
+              }
+              
+              // حذف من التخزين المحلي
+              const localData = await AsyncStorage.getItem("my_mobile_reviews");
+              if (localData) {
+                const local = JSON.parse(localData);
+                const updated = local.filter((r: any) => r.id !== id);
+                await AsyncStorage.setItem("my_mobile_reviews", JSON.stringify(updated));
+              }
+
+              fetchReviews();
+            } catch (error) {
+              console.error("Delete failed:", error);
+              Alert.alert("خطأ", "فشل حذف التعليق");
+            }
+          }
+        }
+      ]
+    );
   };
 
   // ─── UI ────────────────────────────────────────────────────────────────────
@@ -158,7 +222,14 @@ export default function SiteReviewsScreen() {
                       )}
                    </View>
                 </View>
-                <Text style={styles.reviewComment}>{item.comment}</Text>
+                <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Text style={[styles.reviewComment, { flex: 1 }]}>{item.comment}</Text>
+                  {auth.currentUser?.uid === item.userId && (
+                    <TouchableOpacity onPress={() => handleDelete(item.id, item.userId)} style={{ marginLeft: 10 }}>
+                      <Text style={{ fontSize: 16 }}>🗑️</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
                 <Text style={styles.reviewDate}>
                   {item.createdAt?.toDate 
                     ? item.createdAt.toDate().toLocaleDateString('ar-EG') 
