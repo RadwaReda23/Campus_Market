@@ -1,6 +1,6 @@
 
 //this file contains all the constants used in the app, such as colors, fonts, mock data, and navigation items. It helps to keep the code organized and maintainable.
-export const COLORS = { 
+export const COLORS = {
   primary: "#1a3a2a",
   accent: "#c8a84b",
   light: "#f5f0e8",
@@ -60,4 +60,5 @@ export const navItems = [
   { id: "lostfound", label: "المفقودات", icon: "🔍" },
   { id: "messages", label: "الرسائل", icon: "💬" },
   { id: "profile", label: "حسابي", icon: "👤" },
+  { id: "reviews", label: "الآراء", icon: "⭐" },
 ];

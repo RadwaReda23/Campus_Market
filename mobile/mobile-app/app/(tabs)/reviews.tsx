@@ -25,7 +25,7 @@ export default function SiteReviewsScreen() {
   // ─── Fetch Reviews ──────────────────────────────────────────────────────────
   useEffect(() => {
     try {
-      const q = query(collection(db, "feedback"));
+      const q = query(collection(db, "site_reviews"));
       const unsub = onSnapshot(q, 
         (snapshot) => {
           const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -78,7 +78,7 @@ export default function SiteReviewsScreen() {
     setRating(0);
     Alert.alert("نجاح", "تم تسجيل تقييمك");
 
-    addDoc(collection(db, "feedback"), reviewData)
+    addDoc(collection(db, "site_reviews"), reviewData)
       .catch((error) => {
         console.error("Submission failed:", error);
       })

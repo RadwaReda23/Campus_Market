@@ -9,6 +9,7 @@ import HomePage from "./HomePage";
 import LibraryPage from "./LibraryPage";
 import ProfilePage from "./ProfilePage";
 import ChatView from "./ChatView";
+import ReviewsPage from "./ReviewsPage";
 
 const CLOUDINARY_CLOUD_NAME = "dgowyewii";
 const CLOUDINARY_UPLOAD_PRESET = "nlkvsjlj";
@@ -68,10 +69,10 @@ function useSearch(searchQuery) {
 // ─── Add Product Modal ─────────────────────────────────────────────────────────
 function AddProductModal({ onClose, onAdd, editProduct }) {
   const [form, setForm] = useState({
-    title: editProduct?.title || "", 
-    price: editProduct?.price || "", 
-    condition: editProduct?.condition || "جيد", 
-    category: editProduct?.category || "كتب", 
+    title: editProduct?.title || "",
+    price: editProduct?.price || "",
+    condition: editProduct?.condition || "جيد",
+    category: editProduct?.category || "كتب",
     sellerType: editProduct?.sellerType || "طالب",
   });
   const [imageFile, setImageFile] = useState(null);
@@ -223,10 +224,10 @@ function AddProductModal({ onClose, onAdd, editProduct }) {
 
 // ─── Add Lost Modal ────────────────────────────────────────────────────────────
 function AddLostModal({ onClose, onAdd, editItem }) {
-  const [form, setForm] = useState({ 
-    title: editItem?.title || "", 
-    description: editItem?.description || "", 
-    location: editItem?.location || "" 
+  const [form, setForm] = useState({
+    title: editItem?.title || "",
+    description: editItem?.description || "",
+    location: editItem?.location || ""
   });
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(editItem?.imageURL || null);
@@ -271,7 +272,7 @@ function AddLostModal({ onClose, onAdd, editItem }) {
         date: editItem?.date || "الآن",
         createdAt: editItem?.createdAt || new Date(),
       };
-      
+
       if (editItem) {
         await updateDoc(doc(db, "lostFound", editItem.id), item);
         onAdd({ id: editItem.id, ...item });
@@ -477,8 +478,8 @@ function ProductsPage({ searchQuery = "", onStartChat }) {
                   <div>
                     <div className="product-seller">{p.seller}</div>
                     <span className={`seller-type ${p.sellerType === "طالب" ? "type-student" :
-                        p.sellerType === "دكتور" ? "type-doctor" :
-                          p.sellerType === "خريجة" || p.sellerType === "خريج" ? "type-grad" : "type-staff"
+                      p.sellerType === "دكتور" ? "type-doctor" :
+                        p.sellerType === "خريجة" || p.sellerType === "خريج" ? "type-grad" : "type-staff"
                       }`}>{p.sellerType}</span>
                   </div>
                   <div className="product-views">
@@ -533,10 +534,10 @@ function LostFoundPage({ onStartChat }) {
   const handleToggleClaimed = async (item) => {
     try {
       const newStatus = !item.claimed;
-      const confirmMsg = newStatus 
-        ? "هل تم استرداد هذا المفقود بالفعل؟" 
+      const confirmMsg = newStatus
+        ? "هل تم استرداد هذا المفقود بالفعل؟"
         : "إعادة الحالة إلى 'مفقود'؟";
-        
+
       if (!window.confirm(confirmMsg)) return;
 
       await updateDoc(doc(db, "lostFound", item.id), { claimed: newStatus });
@@ -623,8 +624,8 @@ function LostFoundPage({ onStartChat }) {
                         <button
                           className="borrow-btn"
                           onClick={() => handleToggleClaimed(item)}
-                          style={{ 
-                            padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer", 
+                          style={{
+                            padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer",
                             fontFamily: "'Cairo', sans-serif", fontSize: 11, fontWeight: 700,
                             background: item.claimed ? COLORS.success : COLORS.danger, color: "white"
                           }}
@@ -637,14 +638,16 @@ function LostFoundPage({ onStartChat }) {
                     )}
                     {auth.currentUser?.uid !== item.finderId && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); onStartChat({
-                          id: item.id,
-                          title: item.title,
-                          sellerId: item.finderId || "unknown",
-                          seller: item.finder || "مجهول",
-                          imageURL: item.imageURL,
-                          image: item.image
-                        });}}
+                        onClick={(e) => {
+                          e.stopPropagation(); onStartChat({
+                            id: item.id,
+                            title: item.title,
+                            sellerId: item.finderId || "unknown",
+                            seller: item.finder || "مجهول",
+                            imageURL: item.imageURL,
+                            image: item.image
+                          });
+                        }}
                         style={{
                           padding: "6px 12px", borderRadius: 8, border: `1px solid ${COLORS.border}`,
                           background: COLORS.primary, color: "white", fontSize: 11, fontFamily: "'Cairo', sans-serif",
@@ -929,13 +932,14 @@ export default function Dashboard({ user }) {
     library: <LibraryPage onStartChat={startChat} />,
     lostfound: <LostFoundPage onStartChat={startChat} />,
     messages: <MessagesPage onOpenChat={openExistingChat} />,
+    reviews: <ReviewsPage />,
     profile: <ProfilePage />,
     view_profile: <ProfilePage overrideUserId={selectedProfileId} onBack={() => setActivePage("chat")} />,
-    chat: <ChatView 
-            chatData={currentChat} 
-            onBack={() => setActivePage("messages")} 
-            onViewProfile={(uid) => { setSelectedProfileId(uid); setActivePage("view_profile"); }}
-          />
+    chat: <ChatView
+      chatData={currentChat}
+      onBack={() => setActivePage("messages")}
+      onViewProfile={(uid) => { setSelectedProfileId(uid); setActivePage("view_profile"); }}
+    />
   };
 
   return (
