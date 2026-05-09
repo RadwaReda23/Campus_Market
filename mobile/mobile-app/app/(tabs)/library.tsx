@@ -6,6 +6,7 @@ import { Video, ResizeMode } from 'expo-av';
 import { collection, addDoc, serverTimestamp, query, orderBy, onSnapshot, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../firebase';
+import { useRouter } from 'expo-router';
 
 const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
 const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
@@ -22,6 +23,7 @@ interface LibraryItem {
 }
 
 export default function LibraryScreen() {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState(auth.currentUser);
   const [activeTab, setActiveTab] = useState<'borrow' | 'lost'>('borrow');
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
@@ -141,6 +143,14 @@ export default function LibraryScreen() {
                 {isBorrow && isOwner && (
                   <TouchableOpacity style={[styles.smallBtn, { backgroundColor: item.available ? '#1a3a2a' : '#c0392b' }]} onPress={() => updateDoc(doc(db, "library", item.id), { available: !item.available })}>
                     <Text style={styles.smallBtnText}>{item.available ? 'أعير' : 'متاح'}</Text>
+                  </TouchableOpacity>
+                )}
+                {isOwner && (
+                  <TouchableOpacity 
+                    style={[styles.smallBtn, { backgroundColor: '#c8a84b' }]} 
+                    onPress={() => router.push({ pathname: '/addProduct', params: { editId: item.id, type: isBorrow ? 'library' : 'lost' } })}
+                  >
+                    <Text style={styles.smallBtnText}>✏️</Text>
                   </TouchableOpacity>
                 )}
                 {isOwner && (

@@ -1,12 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Image,
   StyleSheet, ActivityIndicator, Alert, ScrollView, Platform, KeyboardAvoidingView
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 
 const CLOUDINARY_CLOUD_NAME = "dz4nwc1yu";
 const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
@@ -15,21 +15,50 @@ const CATEGORIES = ["كتب", "دروس", "ملخصات", "أخرى"];
 
 export default function AddProductScreen() {
   const router = useRouter();
+  const { editId, type = 'products' } = useLocalSearchParams<{ editId?: string, type?: string }>();
+  
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState(CATEGORIES[0]);
+  const [borrowStart, setBorrowStart] = useState('');
+  const [borrowEnd, setBorrowEnd] = useState('');
+  const [lostDate, setLostDate] = useState('');
   const [image, setImage] = useState<{ uri: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(false);
 
-  // Clear data on screen focus
-  useFocusEffect(
-    useCallback(() => {
-      setTitle('');
-      setPrice('');
-      setCategory(CATEGORIES[0]);
-      setImage(null);
-    }, [])
-  );
+  // Load data if editing
+  useEffect(() => {
+    if (editId) {
+      const fetchData = async () => {
+        setFetching(true);
+        try {
+          const docRef = doc(db, type as string, editId as string);
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            const data = snap.data();
+            setTitle(data.title || '');
+            setImage(data.imageURL ? { uri: data.imageURL } : null);
+            if (type === 'products') {
+              setPrice(data.price?.toString() || '');
+              setCategory(data.category || CATEGORIES[0]);
+            } else if (type === 'library') {
+              setBorrowStart(data.borrowStart || '');
+              setBorrowEnd(data.borrowEnd || '');
+            } else if (type === 'lost') {
+              setLostDate(data.lostDate || '');
+            }
+          }
+        } catch (e) {
+          console.error(e);
+          Alert.alert("خطأ", "فشل تحميل بيانات المنتج");
+        } finally {
+          setFetching(false);
+        }
+      };
+      fetchData();
+    }
+  }, [editId, type]);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -42,12 +71,13 @@ export default function AddProductScreen() {
   };
 
   const uploadToCloudinary = async (uri: string) => {
+    if (uri.startsWith('http')) return uri; // Already uploaded
     const response = await fetch(uri);
     const blob = await response.blob();
     const data = new FormData();
     data.append('file', blob);
     data.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-    data.append('folder', 'products');
+    data.append('folder', type);
     const res = await fetch(
       `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
       { method: 'POST', body: data }
@@ -57,8 +87,8 @@ export default function AddProductScreen() {
     return result.secure_url;
   };
 
-  const handleAdd = async () => {
-    if (!title.trim() || !price.trim() || !image) {
+  const handleSave = async () => {
+    if (!title.trim() || !image) {
       Alert.alert('تنبيه', 'الرجاء ملء جميع الحقول واختيار صورة');
       return;
     }
@@ -67,29 +97,57 @@ export default function AddProductScreen() {
 
     setLoading(true);
     try {
-      console.log('🚀 Starting upload...', image.uri);
       const imageURL = await uploadToCloudinary(image.uri);
-      console.log('✅ Image uploaded:', imageURL);
-      await addDoc(collection(db, 'products'), {
+      
+      const docData: any = {
         title: title.trim(),
-        price: parseFloat(price) || 0,
-        category,
         imageURL,
-        seller: user.email || '',
-        sellerId: user.uid,
-        status: 'active',
-        createdAt: serverTimestamp(),
-      });
-      console.log('✅ Product saved to Firestore');
-      Alert.alert('تم ✅', 'تمت إضافة المنتج بنجاح');
+        updatedAt: serverTimestamp(),
+      };
+
+      if (type === 'products') {
+        docData.price = parseFloat(price) || 0;
+        docData.category = category;
+      } else if (type === 'library') {
+        docData.borrowStart = borrowStart;
+        docData.borrowEnd = borrowEnd;
+      } else if (type === 'lost') {
+        docData.lostDate = lostDate;
+      }
+
+      if (editId) {
+        await updateDoc(doc(db, type as string, editId as string), docData);
+        Alert.alert('تم ✅', 'تم تحديث البيانات بنجاح');
+      } else {
+        docData.createdAt = serverTimestamp();
+        docData.seller = user.email || '';
+        docData.sellerId = user.uid;
+        if (type === 'products') docData.status = 'active';
+        if (type === 'library') {
+            docData.available = true;
+            docData.owner = user.email;
+        }
+        if (type === 'lost') docData.owner = user.email;
+        
+        await addDoc(collection(db, type as string), docData);
+        Alert.alert('تم ✅', 'تمت الإضافة بنجاح');
+      }
       router.back();
     } catch (e: any) {
       console.error('❌ Error:', e);
-      Alert.alert('خطأ', `فشل: ${e?.message || 'خطأ غير معروف'}`);
+      Alert.alert('خطأ', `فشل العملية: ${e?.message || 'خطأ غير معروف'}`);
     } finally {
       setLoading(false);
     }
   };
+
+  if (fetching) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#1a3a2a" />
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
@@ -99,7 +157,9 @@ export default function AddProductScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Text style={styles.backBtnText}>← رجوع</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>🛍️ إضافة منتج جديد</Text>
+          <Text style={styles.headerTitle}>
+            {editId ? '✏️ تعديل' : '➕ إضافة'} {type === 'products' ? 'منتج' : type === 'library' ? 'عنصر استعارة' : 'مفقودات'}
+          </Text>
         </View>
 
         <View style={styles.form}>
@@ -109,53 +169,91 @@ export default function AddProductScreen() {
               ? <Image source={{ uri: image.uri }} style={styles.image} />
               : <View style={styles.imagePlaceholder}>
                   <Text style={styles.imagePlaceholderIcon}>📷</Text>
-                  <Text style={styles.imagePlaceholderText}>اختر صورة المنتج</Text>
+                  <Text style={styles.imagePlaceholderText}>اختر صورة</Text>
                 </View>
             }
           </TouchableOpacity>
 
           {/* Title */}
-          <Text style={styles.label}>اسم المنتج</Text>
+          <Text style={styles.label}>الاسم</Text>
           <TextInput
             style={styles.input}
             value={title}
             onChangeText={setTitle}
-            placeholder="أدخل اسم المنتج"
+            placeholder="أدخل الاسم"
             textAlign="right"
           />
 
-          {/* Price */}
-          <Text style={styles.label}>السعر (ج.م)</Text>
-          <TextInput
-            style={styles.input}
-            value={price}
-            onChangeText={setPrice}
-            placeholder="0"
-            keyboardType="numeric"
-            textAlign="right"
-          />
+          {type === 'products' && (
+            <>
+              {/* Price */}
+              <Text style={styles.label}>السعر (ج.م)</Text>
+              <TextInput
+                style={styles.input}
+                value={price}
+                onChangeText={setPrice}
+                placeholder="0"
+                keyboardType="numeric"
+                textAlign="right"
+              />
 
-          {/* Category */}
-          <Text style={styles.label}>الفئة</Text>
-          <View style={styles.categoryRow}>
-            {CATEGORIES.map(cat => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.categoryBtn, category === cat && styles.categoryBtnActive]}
-                onPress={() => setCategory(cat)}
-              >
-                <Text style={[styles.categoryBtnText, category === cat && styles.categoryBtnTextActive]}>
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+              {/* Category */}
+              <Text style={styles.label}>الفئة</Text>
+              <View style={styles.categoryRow}>
+                {CATEGORIES.map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categoryBtn, category === cat && styles.categoryBtnActive]}
+                    onPress={() => setCategory(cat)}
+                  >
+                    <Text style={[styles.categoryBtnText, category === cat && styles.categoryBtnTextActive]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {type === 'library' && (
+            <>
+              <Text style={styles.label}>تاريخ بداية الاستعارة (اختياري)</Text>
+              <TextInput
+                style={styles.input}
+                value={borrowStart}
+                onChangeText={setBorrowStart}
+                placeholder="مثال: 2024-05-10"
+                textAlign="right"
+              />
+              <Text style={styles.label}>تاريخ نهاية الاستعارة (اختياري)</Text>
+              <TextInput
+                style={styles.input}
+                value={borrowEnd}
+                onChangeText={setBorrowEnd}
+                placeholder="مثال: 2024-05-20"
+                textAlign="right"
+              />
+            </>
+          )}
+
+          {type === 'lost' && (
+            <>
+              <Text style={styles.label}>تاريخ الفقد</Text>
+              <TextInput
+                style={styles.input}
+                value={lostDate}
+                onChangeText={setLostDate}
+                placeholder="مثال: اليوم"
+                textAlign="right"
+              />
+            </>
+          )}
 
           {/* Submit */}
-          <TouchableOpacity style={styles.submitBtn} onPress={handleAdd} disabled={loading}>
+          <TouchableOpacity style={styles.submitBtn} onPress={handleSave} disabled={loading}>
             {loading
               ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.submitBtnText}>➕ رفع المنتج</Text>
+              : <Text style={styles.submitBtnText}>{editId ? '💾 حفظ التعديلات' : '➕ رفع الآن'}</Text>
             }
           </TouchableOpacity>
         </View>
@@ -169,7 +267,7 @@ const styles = StyleSheet.create({
   header: { backgroundColor: '#1a3a2a', padding: 20, paddingTop: 55 },
   backBtn: { marginBottom: 8 },
   backBtnText: { color: '#c8a84b', fontSize: 14 },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  headerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   form: { padding: 20 },
   imageBox: {
     width: '100%', height: 200, borderRadius: 12,

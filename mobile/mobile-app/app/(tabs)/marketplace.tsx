@@ -359,6 +359,13 @@ export default function ProductsScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
+                style={[styles.controlBtn, styles.editBtn]}
+                onPress={() => router.push({ pathname: '/addProduct', params: { editId: item.id, type: 'products' } })}
+              >
+                <Text style={styles.controlBtnText}>✏️ تعديل</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.controlBtn, isSold ? styles.activeBtn : styles.soldBtn]}
                 onPress={() => handleToggleStatus(item.id, item.status)}
               >
