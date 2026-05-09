@@ -185,7 +185,7 @@ export default function HomeScreen() {
                    <TouchableOpacity key={p.id} style={styles.miniProduct} onPress={() => router.push('/marketplace')}>
                       <View style={styles.miniImgBg}><Image source={{ uri: p.imageURL }} style={styles.miniImg} /></View>
                       <Text style={styles.miniTitle} numberOfLines={1}>{p.title}</Text>
-                      <Text style={styles.miniPrice}>{p.price} <span>جنيه</span></Text>
+                      <Text style={styles.miniPrice}>{p.price} <Text style={{fontSize: 10, fontFamily: Fonts.cairo}}>جنيه</Text></Text>
                    </TouchableOpacity>
                  ))}
               </ScrollView>
@@ -220,6 +220,15 @@ export default function HomeScreen() {
       </ScrollView>
 
       <GlobalSearch visible={searchVisible} onClose={() => setSearchVisible(false)} />
+
+      {/* AI Assistant FAB */}
+      <TouchableOpacity 
+        style={styles.fab} 
+        onPress={() => router.push('/ai-assistant')}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.fabIcon}>🤖</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -273,5 +282,7 @@ const styles = StyleSheet.create({
   lostEmoji: { fontSize: 28 },
   lostTitle: { fontSize: 13, fontFamily: Fonts.cairoBold, color: Colors.light.primary, textAlign: 'right' },
   lostDesc: { fontSize: 11, color: Colors.light.muted, fontFamily: Fonts.cairo, textAlign: 'right' },
-  lostTag: { fontSize: 9, color: '#888', backgroundColor: Colors.light.background, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, fontFamily: Fonts.cairoBold }
+  lostTag: { fontSize: 9, color: '#888', backgroundColor: Colors.light.background, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, fontFamily: Fonts.cairoBold },
+  fab: { position: 'absolute', bottom: 90, left: 20, width: 60, height: 60, borderRadius: 30, backgroundColor: Colors.light.accent, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, borderWidth: 2, borderColor: 'white' },
+  fabIcon: { fontSize: 30 }
 });
