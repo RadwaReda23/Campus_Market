@@ -1,21 +1,15 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../app/firebase'; // Adjust path if needed
+import { db } from './firebase';
 
-// Initialize Gemini API
-// IMPORTANT: In a real production app, this key should be in a .env file
 const API_KEY = 'AIzaSyCNKHwsuM-zhZm4vgfy5AKBwy4HwCyzan0';
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-/**
- * Fetches relevant campus data (products and lost items) to feed into the AI.
- */
-async function fetchCampusData() {
+export async function fetchCampusData() {
   try {
-    const productsData: any[] = [];
-    const lostData: any[] = [];
+    const productsData = [];
+    const lostData = [];
 
-    // Fetch active products
     const productsQuery = query(collection(db, 'products'), where('status', '==', 'active'));
     const productsSnap = await getDocs(productsQuery);
     productsSnap.forEach(doc => {
@@ -26,11 +20,9 @@ async function fetchCampusData() {
         price: data.price,
         condition: data.condition || 'غير محدد',
         size: data.size || 'غير محدد',
-        sellerId: data.sellerId
       });
     });
 
-    // Fetch lost items
     const lostQuery = query(collection(db, 'lostFound'));
     const lostSnap = await getDocs(lostQuery);
     lostSnap.forEach(doc => {
@@ -39,7 +31,6 @@ async function fetchCampusData() {
         id: doc.id,
         title: data.title,
         status: data.status || 'مفقود',
-        owner: data.owner
       });
     });
 
@@ -50,14 +41,10 @@ async function fetchCampusData() {
   }
 }
 
-/**
- * Asks the Campus Assistant a question, providing the database context.
- */
-export async function askCampusAssistant(userMessage: string) {
+export async function askCampusAssistant(userMessage) {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
     
-    // Fetch live context from database
     const dbContext = await fetchCampusData();
     const contextString = JSON.stringify(dbContext, null, 2);
 

@@ -1,0 +1,167 @@
+.ai-assistant-wrapper {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+}
+
+.ai-fab {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #2c3e50;
+  border: 2px solid white;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: transform 0.2s;
+}
+
+.ai-fab:hover {
+  transform: scale(1.1);
+}
+
+.ai-fab-icon {
+  font-size: 30px;
+}
+
+.ai-chat-window {
+  width: 350px;
+  height: 500px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 5px 25px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #ddd;
+}
+
+.ai-chat-header {
+  background: #2c3e50;
+  color: white;
+  padding: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ai-chat-header h4 {
+  margin: 0;
+  font-family: 'Cairo', sans-serif;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.ai-chat-body {
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+  background: #f9f9f9;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.ai-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+}
+
+.ai-message.user {
+  align-self: flex-start; /* Because it's RTL, user is usually on left or right depending on preference. Let's make user start (right in RTL) */
+  align-items: flex-start;
+}
+
+.ai-message.bot {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.ai-bubble {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-family: 'Cairo', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ai-message.user .ai-bubble {
+  background: #2c3e50;
+  color: white;
+  border-bottom-right-radius: 2px;
+}
+
+.ai-message.bot .ai-bubble {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  border-bottom-left-radius: 2px;
+}
+
+.ai-bubble p {
+  margin: 0 0 5px 0;
+}
+.ai-bubble p:last-child {
+  margin: 0;
+}
+
+.ai-time {
+  font-size: 10px;
+  color: #888;
+  margin-top: 4px;
+  padding: 0 5px;
+}
+
+.typing {
+  font-style: italic;
+  color: #888;
+}
+
+.ai-chat-input {
+  display: flex;
+  padding: 10px;
+  background: white;
+  border-top: 1px solid #ddd;
+}
+
+.ai-chat-input input {
+  flex: 1;
+  padding: 10px 15px;
+  border: 1px solid #ccc;
+  border-radius: 20px;
+  font-family: 'Cairo', sans-serif;
+  outline: none;
+  direction: rtl;
+}
+
+.ai-chat-input button {
+  background: #c8a84b;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 0 20px;
+  margin-right: 10px;
+  cursor: pointer;
+  font-family: 'Cairo', sans-serif;
+  font-weight: bold;
+}
+
+.ai-chat-input button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+/* RTL Support */
+.ai-chat-window, .ai-message.user, .ai-message.bot {
+  direction: rtl;
+}

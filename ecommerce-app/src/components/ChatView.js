@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { db, auth } from "../firebase";
 import {
   collection, addDoc, query, orderBy, onSnapshot,
-  doc, setDoc, getDoc, serverTimestamp, updateDoc
+  doc, setDoc, getDoc, serverTimestamp, updateDoc, deleteDoc
 } from "firebase/firestore";
 import { COLORS } from "../constants";
 
@@ -220,6 +220,17 @@ export default function ChatView({ chatData, onBack, onViewProfile }) {
       console.error("Error reacting:", err);
     }
   };
+
+  const handleDeleteMessage = async (messageId) => {
+    if (!window.confirm("حذف هذه الرسالة؟")) return;
+    try {
+      await deleteDoc(doc(db, "conversations", convId, "messages", messageId));
+      // No need to update state manually if using onSnapshot
+    } catch (err) {
+      console.error("Error deleting message:", err);
+      alert("فشل حذف الرسالة");
+    }
+  };
   const getOtherUserName = () => {
     if (chatData.participantNames) {
       const otherId = Object.keys(chatData.participantNames).find(id => id !== currentUser.uid);
@@ -415,8 +426,17 @@ export default function ChatView({ chatData, onBack, onViewProfile }) {
                   </div>
                 )}
 
-                <div style={{ fontSize: 10, color: isMe ? "rgba(255,255,255,0.7)" : COLORS.muted, marginTop: 4, textAlign: "right" }}>
-                  {msg.timestamp?.toDate().toLocaleTimeString("ar-EG", { hour: "numeric", minute: "numeric" }) || "الآن"}
+                <div style={{ fontSize: 10, color: isMe ? "rgba(255,255,255,0.7)" : COLORS.muted, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>{msg.timestamp?.toDate().toLocaleTimeString("ar-EG", { hour: "numeric", minute: "numeric" }) || "الآن"}</span>
+                  {isMe && (
+                    <button 
+                      onClick={() => handleDeleteMessage(msg.id)} 
+                      style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, padding: "0 4px", color: "inherit", opacity: 0.6 }}
+                      title="حذف الرسالة"
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </div>
               </div>
             );
