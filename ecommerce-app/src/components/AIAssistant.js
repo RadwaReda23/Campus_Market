@@ -39,20 +39,32 @@ export default function AIAssistant() {
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
     setInputText('');
     setIsLoading(true);
 
-    const replyText = await askCampusAssistant(userMsg.text);
+    try {
+      const replyText = await askCampusAssistant(userMsg.text, updatedMessages);
 
-    const botMsg = {
-      id: (Date.now() + 1).toString(),
-      text: replyText,
-      sender: 'bot',
-      timestamp: new Date()
-    };
+      const botMsg = {
+        id: (Date.now() + 1).toString(),
+        text: replyText,
+        sender: 'bot',
+        timestamp: new Date()
+      };
 
-    setMessages(prev => [...prev, botMsg]);
+      setMessages(prev => [...prev, botMsg]);
+    } catch (err) {
+      console.error('AI error:', err);
+      const errorMsg = {
+        id: (Date.now() + 1).toString(),
+        text: 'عذراً، حصلت مشكلة بسيطة. جرب تاني! 😊',
+        sender: 'bot',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    }
     setIsLoading(false);
   };
 
