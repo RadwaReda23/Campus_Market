@@ -12,7 +12,7 @@ import {
 import { auth, db } from './firebase';
 import {
   collection, query, where,
-  doc, updateDoc, onSnapshot, getDocs, setDoc
+  doc, updateDoc, onSnapshot, getDocs, setDoc, addDoc
 } from 'firebase/firestore';
 import { Colors, Fonts } from '@/constants/theme';
 
@@ -165,14 +165,17 @@ export default function ProfileScreen() {
 
   // ─── Upload to Cloudinary ──────────────────────────────────────────────────
   const uploadToCloudinary = async (pickedUri: string): Promise<string> => {
-    const response = await fetch(pickedUri);
-    const blob = await response.blob();
     const data = new FormData();
-    data.append("file", blob);
-    data.append("upload_preset", "unsigned_preset");
+    data.append("file", {
+      uri: pickedUri,
+      type: 'image/jpeg',
+      name: 'profile_photo.jpg',
+    } as any);
+    data.append("upload_preset", "nlkvsjlj");
 
-    const res = await fetch("https://api.cloudinary.com/v1_1/dz4nwc1yu/image/upload", {
-      method: "POST", body: data,
+    const res = await fetch("https://api.cloudinary.com/v1_1/dgowyewii/image/upload", {
+      method: "POST",
+      body: data,
     });
     const result = await res.json();
     if (!res.ok) throw new Error(result.error?.message || "Upload failed");
@@ -222,25 +225,44 @@ export default function ProfileScreen() {
     }
   };
 
-  const userRatings = userData?.ratings || {};
-  const ratingKeys = Object.keys(userRatings);
+  const [averageRating, setAverageRating] = useState<number | string>(0);
+  const [ratingCount, setRatingCount] = useState(0);
+  const [existingRatingId, setExistingRatingId] = useState<string | null>(null);
 
-  let totalScore = 0;
-  for (const key of ratingKeys) {
-    totalScore += Number(userRatings[key] || 0);
-  }
-  const averageRating = ratingKeys.length > 0
-    ? (totalScore / ratingKeys.length).toFixed(1)
-    : 0;
+  const fetchRatings = async () => {
+    if (!targetUid) return;
+    try {
+      const ratingsQuery = query(collection(db, "ratings"), where("ratedUserId", "==", targetUid));
+      const snap = await getDocs(ratingsQuery);
+      if (snap.empty) {
+        setAverageRating(0);
+        setRatingCount(0);
+        setLocalVote(null);
+        setExistingRatingId(null);
+        return;
+      }
+      let total = 0;
+      let mVote = null;
+      let mId = null;
+      snap.forEach(d => {
+        total += d.data().score || 0;
+        if (auth.currentUser && d.data().raterId === auth.currentUser.uid) {
+          mVote = d.data().score;
+          mId = d.id;
+        }
+      });
+      setAverageRating((total / snap.size).toFixed(1));
+      setRatingCount(snap.size);
+      setLocalVote(mVote);
+      setExistingRatingId(mId);
+    } catch (err) {
+      console.log("Fetch ratings err", err);
+    }
+  };
 
   useEffect(() => {
-    if (auth.currentUser && userRatings && userRatings[auth.currentUser.uid] !== undefined) {
-      setLocalVote(Number(userRatings[auth.currentUser.uid]));
-    } else if (userData) {
-      // فقط إذا تم تحميل بيانات المستخدم وتأكدنا أنه لا يوجد تقييم
-      setLocalVote(null);
-    }
-  }, [userRatings, targetUid, auth.currentUser?.uid, !!userData]);
+    fetchRatings();
+  }, [targetUid, auth.currentUser?.uid]);
 
   const handleRate = async (score: number) => {
     if (!auth.currentUser || !targetUid) {
@@ -252,24 +274,28 @@ export default function ProfileScreen() {
     setLocalVote(score);
     
     try {
-      // 2. تحديث قاعدة البيانات مباشرة باستخدام dot notation لتجنب أي تعارض في البيانات
-      const ratingsRef = doc(db, "users", targetUid);
-      const updateKey = `ratings.${auth.currentUser.uid}`;
-      
-      await updateDoc(ratingsRef, { [updateKey]: score });
-      console.log("✅ Rating saved successfully:", score);
-    } catch (e: any) {
-      // إذا فشل updateDoc (غالباً لأن المستند غير موجود)، نستخدم setDoc
-      try {
-        const ratingsRef = doc(db, "users", targetUid);
-        await setDoc(ratingsRef, { ratings: { [auth.currentUser.uid]: score } }, { merge: true });
-        console.log("✅ Rating saved successfully via setDoc");
-      } catch (err2) {
-        console.error("❌ Rate error:", err2);
-        const existingVote = userRatings[auth.currentUser.uid];
-        setLocalVote(existingVote ? Number(existingVote) : null);
-        Alert.alert("خطأ", "تعذر حفظ التقييم");
+      if (existingRatingId) {
+        await updateDoc(doc(db, "ratings", existingRatingId), {
+          score,
+          createdAt: new Date(),
+        });
+      } else {
+        const res = await addDoc(collection(db, "ratings"), {
+          raterId: auth.currentUser.uid,
+          raterName: auth.currentUser.displayName || auth.currentUser.email || "مستخدم",
+          ratedUserId: targetUid,
+          score,
+          comment: "",
+          createdAt: new Date(),
+        });
+        setExistingRatingId(res.id);
       }
+      setLocalVote(score);
+      await fetchRatings();
+      Alert.alert("✅", existingRatingId ? "تم تحديث التقييم بنجاح!" : "تم تسجيل التقييم بنجاح!");
+    } catch (e) {
+      console.log("Rating error", e);
+      Alert.alert("❌", "حدث خطأ أثناء التقييم");
     }
   };
 
@@ -352,7 +378,7 @@ export default function ProfileScreen() {
                 );
               })}
             </View>
-            <Text style={styles.ratingCount}>({ratingKeys.length} تقييم)</Text>
+            <Text style={styles.ratingCount}>({ratingCount} تقييم)</Text>
             {!isOwnProfile && (
               <Text style={{ fontSize: 10, color: 'rgba(255,255,255,0.9)', marginTop: 4, fontFamily: Fonts.cairoBold }}>
                 {localVote ? `تقييمك المُسجل: ${localVote} ⭐️` : 'اضغط النجوم للتصويت'}

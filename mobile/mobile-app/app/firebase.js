@@ -1,7 +1,9 @@
-import { getStorage } from "firebase/storage";
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { initializeAuth, getReactNativePersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from "react-native";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCuEOI8MwpTxAv5LFAEgzxQ_j_vldY8j7Y",
@@ -12,11 +14,29 @@ const firebaseConfig = {
   appId: "1:668442069375:web:acf5aa861a3d769cc7b24a",
 };
 
-// تهيئة تطبيق Firebase (لو مفيش تطبيقات موجودة مسبقًا)
+// تهيئة تطبيق Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
-// تصدير خدمات Firebase
-export const auth = getAuth(app);          // المصادقة (Authentication)
+// تهيئة Auth مع التخزين المحلي (يتعامل مع Web و Mobile بشكل مختلف)
+let auth;
+try {
+  if (Platform.OS === 'web') {
+    auth = initializeAuth(app, {
+      persistence: browserLocalPersistence
+    });
+  } else {
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+    });
+  }
+} catch (error) {
+  // في حالة حدوث خطأ (مثل إعادة التهيئة)، نستخدم auth الحالية
+  const { getAuth } = require("firebase/auth");
+  auth = getAuth(app);
+}
+
+export { auth };
+
 export const db = getFirestore(app);       // قاعدة البيانات (Firestore)
 export const storage = getStorage(app);    // التخزين (Cloud Storage)
 

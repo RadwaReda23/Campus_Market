@@ -8,6 +8,7 @@ import SignUp from "./pages/RegisterAndLogin";
 import ForgetPassword from "./pages/forgetPassword";
 import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./components/Dashboard";
+import AIAssistant from "./components/AIAssistant";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -60,6 +61,7 @@ function App() {
         <Route path="/home" element={user ? <Dashboard user={user} /> : <Navigate to="/signup" />} />
         <Route path="*" element={<Navigate to={user ? "/home" : "/signup"} />} />
       </Routes>
+      <AIAssistant />
     </Router>
   );
 }

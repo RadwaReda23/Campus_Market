@@ -36,7 +36,7 @@ import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import * as ImagePicker from "expo-image-picker";
 import { Video } from "expo-av";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 
 const { width } = Dimensions.get("window");
 
@@ -71,7 +71,15 @@ export default function ProductsScreen() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const params = useLocalSearchParams();
   const [searchText, setSearchText] = useState("");
+
+  useEffect(() => {
+    if (params.search) {
+      setSearchText(params.search as string);
+      setSelectedCategory("الكل");
+    }
+  }, [params.search]);
   const [selectedCategory, setSelectedCategory] = useState("الكل");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quickMessage, setQuickMessage] = useState("");
@@ -348,6 +356,13 @@ export default function ProductsScreen() {
                 onPress={() => handleDeleteProduct(item.id)}
               >
                 <Text style={styles.controlBtnText}>🗑️ حذف</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.controlBtn, styles.editBtn]}
+                onPress={() => router.push({ pathname: '/addProduct', params: { editId: item.id, type: 'products' } })}
+              >
+                <Text style={styles.controlBtnText}>✏️ تعديل</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

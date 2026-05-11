@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../firebase";
 import { collection, addDoc, getDocs, query, orderBy, updateDoc, doc, onSnapshot, where, deleteDoc } from "firebase/firestore";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import { COLORS, FONTS, mockMessages, navItems } from "../constants";
 import HomePage from "./HomePage";
@@ -403,6 +403,18 @@ function ProductsPage({ searchQuery = "", onStartChat }) {
     setShowModal(true);
   };
 
+  const handleToggleStatus = async (p) => {
+    const newStatus = p.status === "sold" ? "active" : "sold";
+    try {
+      await updateDoc(doc(db, "products", p.id), { status: newStatus });
+      setProducts(prev => prev.map(item => item.id === p.id ? { ...item, status: newStatus } : item));
+      alert(newStatus === "sold" ? "تم تحديد المنتج كمباع 💰" : "المنتج متاح الآن ✅");
+    } catch (err) {
+      console.error(err);
+      alert("فشل التحديث");
+    }
+  };
+
   return (
     <>
       {showModal && (
@@ -490,10 +502,20 @@ function ProductsPage({ searchQuery = "", onStartChat }) {
                         cursor: "pointer", fontWeight: 700
                       }}>💬 تواصل</button>
                     ) : (
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <span style={{ fontSize: 11, color: COLORS.muted }}>👁 {p.views}</span>
-                        <button onClick={() => handleEditProduct(p)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>✏️</button>
-                        <button onClick={() => handleDeleteProduct(p.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>🗑️</button>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <button
+                          onClick={() => handleToggleStatus(p)}
+                          style={{
+                            padding: "6px 12px", borderRadius: 8, border: "none",
+                            background: p.status === "sold" ? COLORS.success : COLORS.danger,
+                            color: "white", fontSize: 11, fontFamily: "'Cairo', sans-serif",
+                            cursor: "pointer", fontWeight: 700
+                          }}
+                        >
+                          {p.status === "sold" ? "✅ متاح" : "💰 تم البيع"}
+                        </button>
+                        <button onClick={() => handleEditProduct(p)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>✏️</button>
+                        <button onClick={() => handleDeleteProduct(p.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}>🗑️</button>
                       </div>
                     )}
                   </div>
@@ -673,6 +695,18 @@ function MessagesPage({ onOpenChat }) {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const handleDeleteConversation = async (e, convId) => {
+    e.stopPropagation();
+    if (!window.confirm("هل أنت متأكد من حذف هذه المحادثة نهائياً؟")) return;
+    try {
+      await deleteDoc(doc(db, "conversations", convId));
+      setConversations(prev => prev.filter(c => c.id !== convId));
+    } catch (err) {
+      console.error(err);
+      alert("فشل حذف المحادثة");
+    }
+  };
+
   useEffect(() => {
     if (!auth.currentUser) return;
 
@@ -735,12 +769,15 @@ function MessagesPage({ onOpenChat }) {
                 <div className="msg-product">بخصوص: {conv.productTitle}</div>
                 <div className="msg-text">{conv.lastMessage || "بدأت المحادثة"}</div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end", flexShrink: 0 }}>
-                <span className="msg-time">
-                  {conv.lastMessageTime?.toDate().toLocaleDateString("ar-EG") || ""}
-                </span>
-                <button className="borrow-btn btn-primary">فتح</button>
-              </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end", flexShrink: 0 }}>
+                  <span className="msg-time">
+                    {conv.lastMessageTime?.toDate().toLocaleDateString("ar-EG") || ""}
+                  </span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={(e) => handleDeleteConversation(e, conv.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>🗑️</button>
+                    <button className="borrow-btn btn-primary">فتح</button>
+                  </div>
+                </div>
             </div>
           );
         })
@@ -795,6 +832,7 @@ const inputStyle = {
 
 // ─── Dashboard Shell ───────────────────────────────────────────────────────────
 export default function Dashboard({ user }) {
+  const location = useLocation();
   const [activePage, setActivePage] = useState("home");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -803,6 +841,16 @@ export default function Dashboard({ user }) {
   const [selectedProfileId, setSelectedProfileId] = useState(null);
   const searchRef = useRef(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const aiSearch = params.get("search");
+    if (aiSearch) {
+      setSearchQuery(aiSearch);
+      setActivePage("products");
+      navigate('/home', { replace: true });
+    }
+  }, [location.search, navigate]);
 
   const { results, searching } = useSearch(searchQuery);
   const totalResults = results.products.length + results.library.length + results.lostFound.length;

@@ -30,11 +30,14 @@ function AuthGate() {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (!checked) {
         setChecked(true);
-        if (user) {
-          router.replace('/(tabs)');
-        } else {
-          router.replace('/Register');
-        }
+        // Using a tiny timeout to ensure the router is fully mounted and ready for redirection
+        setTimeout(() => {
+          if (user) {
+            router.replace('/(tabs)');
+          } else {
+            router.replace('/Register');
+          }
+        }, 100);
       }
     });
     return () => unsub();
